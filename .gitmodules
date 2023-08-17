@@ -1,0 +1,3 @@
+[submodule "ext/sublime_asyncio"]
+	path = ext/sublime_asyncio
+	url = git@github.com:sublimelsp/sublime_asyncio.git

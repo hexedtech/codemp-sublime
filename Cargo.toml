@@ -1,0 +1,18 @@
+[package]
+name = "CodempClient-Sublime"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "codemp_client"
+crate-type = ["cdylib"]
+
+[dependencies]
+codemp = { path = "./ext/codemp" }
+pyo3 = { version = "0.19", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.19", features = ["tokio-runtime"] }
+tokio = "1.29.1"
+
+[build-dependencies]
+pyo3-build-config = "0.19.2"
