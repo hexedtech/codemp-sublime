@@ -1,0 +1,45 @@
+[
+  { "caption": "Preferences: Codemp Client Settings",
+    "command": "edit_settings",
+    "args": {
+      "base_file": "${packages}/CodempClient/CodempClient.sublime-settings",
+      "default": "{\n\t$0\n}\n"
+    }
+  },
+  { "caption": "Preferences: Codemp Client Key Bindings",
+    "command": "edit_settings",
+    "args": {
+      "base_file": "${packages}/CodempClient/Default (${platform}).sublime-keymap",
+      "default": "[\n\t$0\n]\n"
+    }
+  },
+  { "caption": "Codemp: Open Readme",
+    "command": "open_file",
+    "args": {
+      "file": "${packages}/CodempClient/README.md"
+    }
+  },
+  {
+  	"caption": "Codemp: Connect",
+    // # on_window_command, does not trigger when called from the command palette
+    // # See: https://github.com/sublimehq/sublime_text/issues/2234 
+  	"command": "proxy_codemp_connect",
+  	"args": {
+      // "server_host": "http://[::1]:50051"
+  	}
+  },
+  {
+  	"caption": "Codemp: Share",
+  	"command": "proxy_codemp_share",
+  	"arg": {
+  		//
+  	}
+  },
+  {
+    "caption": "Codemp: Join",
+    "command": "proxy_codemp_join",
+    "arg": {
+      //
+    }
+  },
+]

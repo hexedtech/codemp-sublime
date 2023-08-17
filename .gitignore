@@ -1,5 +1,5 @@
 /target
-/ext/codemp_client/*
+test.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -10,8 +10,8 @@ __pycache__/
 *.lock
 
 #sublime
-*.sublime-commands
 *.sublime-project
+*.sublime-workspace
 
 # Distribution / packaging
 .Python
