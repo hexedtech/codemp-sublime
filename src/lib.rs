@@ -1,4 +1,4 @@
-use std::{sync::Arc, error::Error, borrow::BorrowMut};
+use std::{sync::Arc, error::Error};
 
 use codemp::{
     client::CodempClient,
