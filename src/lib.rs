@@ -1,17 +1,38 @@
-use std::{sync::Arc, error::Error};
+use std::{sync::Arc, error::Error, format};
 
-use codemp::{
-    client::CodempClient,
-    controller::{cursor::{CursorSubscriber, CursorControllerHandle},
-    buffer::{OperationControllerHandle, OperationControllerSubscriber}},
-    proto::Position, factory::OperationFactory, tokio::sync::Mutex
-};
+use codemp::prelude::*;
+use codemp::errors::Error as CodempError;
+
+use  tokio::sync::Mutex;
 
 use pyo3::{
     prelude::*,
-    exceptions::PyConnectionError, 
+    exceptions::{PyConnectionError, PyRuntimeError}, 
     types::{PyBool, PyString}
 };
+
+struct PyCodempError(CodempError);
+impl From::<CodempError> for PyCodempError {
+    fn from(err: CodempError) -> Self {
+        PyCodempError(err)
+    }
+}
+
+impl std::convert::From<PyCodempError> for PyErr {
+    fn from(err: PyCodempError) -> PyErr {
+        match err.0 {
+            CodempError::Transport { status, message } => {
+                PyConnectionError::new_err(format!("Transport error: ({}) {}", status, message))
+            }
+            CodempError::Channel { send } => {
+                PyConnectionError::new_err(format!("Channel error (send:{})", send))
+            },
+            CodempError::InvalidState { msg } => {
+                PyRuntimeError::new_err(format!("Invalid state: {}", msg))
+            }
+        }
+    }
+}
 
 #[pyfunction]
 fn connect<'a>(py: Python<'a>, dest: String) -> PyResult<&'a PyAny> {
