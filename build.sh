@@ -14,7 +14,9 @@ PYO3_PYTHON="$(pyenv which python)"
 PYTHON_SYS_EXECUTABLE="$PYO3_PYTHON"
 CARGO_FEATURES="pyo3/extension-module"
 
+echo "Building with python: $PYO3_PYTHON"
 env PYO3_PYTHON="${PYO3_PYTHON}" PYTHON_SYS_EXECUTABLE="$PYO3_PYTHON" cargo build --features "$CARGO_FEATURES"
+echo "Copying into: $TARGET_DIR/$FULL_TARGET"
 
 [[ -f "$TARGET_DIR/$FUll_TARGET" ]] && echo "$FILE exists."
 ditto "$BUILD_DIR/${FILENAME}.dylib" "$TARGET_DIR/$FULL_TARGET"
