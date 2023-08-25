@@ -4,68 +4,109 @@ import Codemp.bindings.codemp_client as libcodemp
 class CodempClient():
 
 	def __init__(self):
-		self.handle = None
-		self.id = None
+		self.handle = libcodemp.codemp_init()
 		self.ready = False
 
-	async def connect(self, server_host):
-		self.handle = await libcodemp.connect(server_host)
-		self.id = await self.handle.get_id()
+	async def connect(self, server_host): # -> None
+		await self.handle.connect(server_host)
 		self.ready = True
 
-	def disconnect(self):
+	def disconnect(self): # -> None
+		# disconnect all buffers
+		# stop all callbacks
 		self.handle = None
-		self.id = None
 		self.ready = False
-		# some code that tells the server to unsubscribe stuff as well.
 
-	async def get_id(self):
-		if self.ready and not self.id:
-			self.id = await self.handle.get_id()
-			return self.id
-		elif self.ready:
-			return self.id
-		else:
-			raise RuntimeError("Attemp to get id without an established connection.")
-
-	async def create(self, path, content=None):
+	async def create(self, path, content=None): # -> None
 		if self.ready:
 			return await self.handle.create(path, content)
-		else:
-			raise RuntimeError("Attemp to create a buffer without a connection.")
-
-	async def listen(self):
+		
+	async def join(self, session): # -> CursorController
 		if self.ready:
-			return CursorController(await self.handle.listen())
-		else:
-			raise RuntimeError("Attempt to listen without a connection.")
-
-	async def attach(self, path):
+			return CursorController(await self.handle.join(session))
+		
+	async def attach(self, path): # -> BufferController
 		if self.ready:
-			return ContentController(await self.handle.attach(path))
-		else:
-			raise RuntimeError("Attempt to attach without a connection.")
+			return BufferController(await self.handle.attach(path))
+		
+	async def get_cursor(self): # -> CursorController
+		if self.ready:
+			return CursorController(await self.handle.get_cursor())
+
+	async def get_buffer(self, path): # -> BufferController
+		if self.ready:
+			return BufferController(await self.handle.get_buffer())
+
+	async def remove_buffer(self, path): # -> None
+		if self.ready:
+			await self.handle.disconnect_buffer(path)
 
 class CursorController():
 	def __init__(self, handle):
 		self.handle = handle
 
-	async def send(self, path, start, end):
-		await self.handle.send(path, start, end)
+	def send(self, path, start, end): # -> None
+		self.handle.send(path, start, end)
 
-	def callback(self, coro, id):
+	def try_recv(self): # -> Optional[CursorEvent]
+		return self.handle.try_recv()
+
+	async def recv(self): # -> CursorEvent
+		return await self.handle.recv()
+
+	async def poll(self): # -> None
+		# await until new cursor event, then returns
+		return await self.handle.poll()
+
+	def drop_callback(self): # -> None
+		self.handle.drop_callback()
+
+	def callback(self, coro): # -> None
 		self.handle.callback(coro, id)
 
-class ContentController():
+class BufferController():
 	def __init__(self, handle):
 		self.handle = handle
 
-	def get_content(self):
+	def get_content(self): # -> String
 		return self.handle.content()
 
-	async def apply(self, skip, text, tail):
-		return await self.handle.apply(skip, text, tail)
+	def replace(self, txt): # -> None
+		# replace the whole buffer.
+		self.handle.replace(txt)
 
-	def callback(self, coro, id):
-		self.handle.callback(coro, id)
+	def insert(self, txt, pos): # -> None
+		# insert text at buffer position pos
+		self.handle.insert(txt, pos)
+
+	def delta(self, start, txt, end): # -> None
+		# delta in the region start..end with txt new content
+		self.handle.delta(start, txt, end)
+
+	def delete(self, pos, count): # -> None
+		# delete starting from pos, count chars.
+		self.handle.delete(pos, count)
+
+	def cancel(self, pos, count): # -> None
+		# cancel backward `count` elements from pos.
+		self.handle.cancle(pos, count)
+
+	def try_recv(self): # -> Optional[TextChange]
+		return self.handle.try_recv()
+
+	async def recv(self): # -> TextChange 
+		return await self.handle.recv()
+
+	async def poll(self): # -> ??
+		return await self.handle.poll()
+
+	def drop_callback(self): # -> None
+		self.handle.drop_callback()
+
+	def callback(self, coro): # -> None
+		self.handle.callback(coro)
+
+
+
+
 

@@ -53,6 +53,7 @@ impl From::<CodempInstance> for PyClientHandle {
 
 #[pymethods]
 impl PyClientHandle {
+
     fn connect<'a>(&'a self, py: Python<'a>, addr: String) ->PyResult<&'a PyAny> {
         let rc = self.0.clone();
 
@@ -232,7 +233,7 @@ impl PyCursorController {
         }
     }
 
-    fn send<'a>(&'a self, py: Python<'a>, path: String, start: (i32, i32), end: (i32, i32)) -> PyResult<&'a PyAny> {
+    fn send<'a>(&'a self, path: String, start: (i32, i32), end: (i32, i32)) -> PyResult<()> {
         let rc = self.handle.clone();
         let pos = CodempCursorPosition {
             buffer: path,
@@ -240,12 +241,8 @@ impl PyCursorController {
             end: Some(end.into())
         };
 
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            rc.send(pos)
-                .map_err(PyCodempError::from)?;
-            Ok(())
-        })
-
+        rc.send(pos).map_err(PyCodempError::from)?;
+        Ok(())
     }
 
     fn try_recv(&self, py: Python<'_>) -> PyResult<PyObject> {

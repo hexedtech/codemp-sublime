@@ -9,9 +9,9 @@ import time
 
 # UGLYYYY, find a way to not have global variables laying around.
 _tasks = []
-_client = CodempClient()
+_client = None
 _cursor_controller = None
-_op_controller = None
+_buffer_controller = None
 _setting_key = "codemp_buffer"
 
 def store_task(name = None):
@@ -23,6 +23,8 @@ def store_task(name = None):
 	return store_named_task
 
 def plugin_loaded():
+	global _client
+	_client = CodempClient()
 	sublime_asyncio.acquire() # instantiate and start a global event loop.
 
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
@@ -47,24 +49,24 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 		return False
 
 	def on_text_changed(self, changes):
-		global _op_controller
-		if _op_controller:
+		global _buffer_controller
+		if _buffer_controller:
 			for change in changes:
 				sublime_asyncio.dispatch(apply_changes(change))
 
 async def apply_changes(change):
-	global _op_controller
+	global _buffer_controller
 
 	text = change.str
 	skip = change.a.pt
 	if change.len_utf8 == 0: # we are inserting new text.
-		tail = len(_op_controller.get_content()) - skip
+		tail = len(_buffer_controller.get_content()) - skip
 	else: # we are changing an existing region of text of length len_utf8
-		tail = len(_op_controller.get_content()) - skip - change.len_utf8
+		tail = len(_buffer_controller.get_content()) - skip - change.len_utf8
 
-	tail_skip = len(_op_controller.get_content()) - tail
+	tail_skip = len(_buffer_controller.get_content()) - tail
 	print("[buff change]", skip, text, tail_skip)
-	await _op_controller.apply(skip, text, tail)
+	await _buffer_controller.apply(skip, text, tail)
 
 async def make_connection(server_host):
 	global _client
@@ -90,7 +92,7 @@ async def sync_buffer(caller, start, end, txt):
 async def share_buffer(buffer):
 	global _client
 	global _cursor_controller
-	global _op_controller
+	global _buffer_controller
 
 	if not _client.ready:
 		sublime.error_message("No connected client.")
@@ -106,8 +108,8 @@ async def share_buffer(buffer):
 		sublime.error_message("Could not share buffer.")
 		return
 
-	_op_controller = await _client.attach(buffer)
-	_op_controller.callback(sync_buffer, _client.id)
+	_buffer_controller = await _client.attach(buffer)
+	_buffer_controller.callback(sync_buffer, _client.id)
 	
 	_cursor_controller = await _client.listen()
 	_cursor_controller.callback(move_cursor, _client.id)
@@ -115,7 +117,7 @@ async def share_buffer(buffer):
 	if not _cursor_controller:
 		sublime.error_message("Could not subsribe a listener.")
 		return
-	if not _op_controller:
+	if not _buffer_controller:
 		sublime.error_message("Could not attach to the buffer.")
 		return
 
@@ -127,7 +129,7 @@ async def share_buffer(buffer):
 async def join_buffer(window, buffer):
 	global _client
 	global _cursor_controller
-	global _op_controller
+	global _buffer_controller
 
 	if not _client.ready:
 		sublime.error_message("No connected client.")
@@ -138,8 +140,8 @@ async def join_buffer(window, buffer):
 	sublime.status_message("[codemp] Joining buffer {}".format(buffer))
 	print("[codemp] Joining buffer {}".format(buffer))
 
-	_op_controller = await _client.attach(buffer)
-	content = _op_controller.get_content()
+	_buffer_controller = await _client.attach(buffer)
+	content = _buffer_controller.get_content()
 	view.run_command("codemp_replace_view", {"content": content})
 
 	_cursor_controller = await _client.listen()
@@ -149,7 +151,7 @@ async def join_buffer(window, buffer):
 	if not _cursor_controller:
 		sublime.error_message("Could not subsribe a listener.")
 		return
-	if not _op_controller:
+	if not _buffer_controller:
 		sublime.error_message("Could not attach to the buffer.")
 		return
 
