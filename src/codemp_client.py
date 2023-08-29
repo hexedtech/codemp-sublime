@@ -5,41 +5,36 @@ class CodempClient():
 
 	def __init__(self):
 		self.handle = libcodemp.codemp_init()
-		self.ready = False
 
 	async def connect(self, server_host): # -> None
 		await self.handle.connect(server_host)
-		self.ready = True
 
 	def disconnect(self): # -> None
 		# disconnect all buffers
 		# stop all callbacks
 		self.handle = None
-		self.ready = False
 
 	async def create(self, path, content=None): # -> None
-		if self.ready:
-			return await self.handle.create(path, content)
-		
+			await self.handle.create(path, content)
+	
+	# join a workspace
 	async def join(self, session): # -> CursorController
-		if self.ready:
 			return CursorController(await self.handle.join(session))
 		
 	async def attach(self, path): # -> BufferController
-		if self.ready:
 			return BufferController(await self.handle.attach(path))
 		
 	async def get_cursor(self): # -> CursorController
-		if self.ready:
 			return CursorController(await self.handle.get_cursor())
 
 	async def get_buffer(self, path): # -> BufferController
-		if self.ready:
 			return BufferController(await self.handle.get_buffer())
 
 	async def remove_buffer(self, path): # -> None
-		if self.ready:
 			await self.handle.disconnect_buffer(path)
+
+	async def leave_workspace(self): # -> None
+		pass # todo 
 
 class CursorController():
 	def __init__(self, handle):
@@ -62,7 +57,7 @@ class CursorController():
 		self.handle.drop_callback()
 
 	def callback(self, coro): # -> None
-		self.handle.callback(coro, id)
+		self.handle.callback(coro)
 
 class BufferController():
 	def __init__(self, handle):

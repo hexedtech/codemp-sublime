@@ -1,6 +1,6 @@
 use std::{sync::Arc, format};
 
-use codemp::{prelude::*};
+use codemp::prelude::*;
 use codemp::errors::Error as CodempError;
 
 use pyo3::{
@@ -58,7 +58,9 @@ impl PyClientHandle {
         let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            rc.connect(addr.as_str()).await.map_err(PyCodempError::from)?;
+            rc.connect(addr.as_str())
+                .await
+                .map_err(PyCodempError::from)?;
             Ok(())
         })
     }
@@ -89,6 +91,7 @@ impl PyClientHandle {
         })
     }
 
+    // join a workspace
     fn join<'a>(&'a self, py: Python<'a>, session: String) -> PyResult<&'a PyAny> {
         let rc = self.0.clone();
 
@@ -393,12 +396,11 @@ impl PyBufferController {
         Ok(cont)
     }
 
-    // What to do with this send? does it make sense to implement it at all?
+    // TODO: What to do with this send? 
+    // does it make sense to implement it at all for the python side??
+
     // fn send<'a>(&self, py: Python<'a>, skip: usize, text: String, tail: usize) -> PyResult<&'a PyAny>{
-    //     let rc = self.handle.clone();
-    //     pyo3_asyncio::tokio::future_into_py(py, async move {
-    //         Ok(())
-    //     })
+    //     todo!()
     // }
 
     fn try_recv(&self, py: Python<'_>) -> PyResult<PyObject> {
@@ -440,9 +442,16 @@ impl PyBufferController {
 
 #[pyclass]
 struct PyCursorEvent {
+    #[pyo3(get, set)]
     user: String,
+    
+    #[pyo3(get, set)]
     buffer: String,
+    
+    #[pyo3(get, set)]
     start: (i32, i32),
+
+    #[pyo3(get, set)]
     end: (i32, i32)
 }
 
@@ -461,8 +470,13 @@ impl From<CodempCursorEvent> for PyCursorEvent {
 
 #[pyclass]
 struct PyTextChange {
+    #[pyo3(get, set)]
     start_incl: usize,
+    
+    #[pyo3(get, set)]
     end_excl: usize,
+
+    #[pyo3(get, set)]
     content: String
 }
 
