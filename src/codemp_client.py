@@ -10,8 +10,6 @@ class CodempClient():
 		await self.handle.connect(server_host)
 
 	def disconnect(self): # -> None
-		# disconnect all buffers
-		# stop all callbacks
 		self.handle = None
 
 	async def create(self, path, content=None): # -> None
@@ -30,7 +28,7 @@ class CodempClient():
 	async def get_buffer(self, path): # -> BufferController
 			return BufferController(await self.handle.get_buffer())
 
-	async def remove_buffer(self, path): # -> None
+	async def disconnect_buffer(self, path): # -> None
 			await self.handle.disconnect_buffer(path)
 
 	async def leave_workspace(self): # -> None
