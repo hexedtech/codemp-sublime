@@ -185,7 +185,7 @@ def compress_changes(view, changes):
 	# as a workaround, whenever we receive multiple changes we compress all of them into a "single one" that delta understands,
 	# namely, we get a bounding region to the change, and all the text in between.
 	if len(changes) == 1:
-		print("[change]", "[", changes[0].a.pt, changes[0].b.pt, "]", changes[0].str)
+		# print("[change]", "[", changes[0].a.pt, changes[0].b.pt, "]", changes[0].str)
 		return (changes[0].a.pt, changes[0].str, changes[0].b.pt)
 
 	return walk_compress_changes(view, changes)
@@ -244,8 +244,8 @@ def walk_compress_changes(view, changes):
 		# print("\t[buff change]", change.a.pt, change.str, "(", change.len_utf8,")", change.b.pt)
 
 	txt = view.substr(sublime.Region(txt_a, txt_b))
-	print("[walking txt]", "[", txt_a, txt_b, "]", txt)
-	print("[walking reg]", "[", reg_a, reg_b, "]")
+	# print("[walking txt]", "[", txt_a, txt_b, "]", txt)
+	# print("[walking reg]", "[", reg_a, reg_b, "]")
 	return reg_a, txt, reg_b
 
 def apply_buffer_change(buffer):
