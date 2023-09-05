@@ -23,23 +23,25 @@
   	"caption": "Codemp: Connect",
     // # on_window_command, does not trigger when called from the command palette
     // # See: https://github.com/sublimehq/sublime_text/issues/2234 
-  	"command": "proxy_codemp_connect",
+  	"command": "codemp_connect",
   	"args": {
       // "server_host": "http://[::1]:50051"
+      // 'session' : 'default' (the name of the workspace to join)
   	}
   },
   {
   	"caption": "Codemp: Share",
-  	"command": "proxy_codemp_share",
+  	"command": "codemp_share",
   	"arg": {
-  		//
+  		// 'sublime_buffer' : /path/to/buffer/to/share
+      // 'server_id' : 'how to call the buffer on the server'
   	}
   },
   {
     "caption": "Codemp: Join",
-    "command": "proxy_codemp_join",
+    "command": "codemp_join",
     "arg": {
-      //
-    }
+      // 'server_buffer' : 'test'
+    },
   },
 ]
