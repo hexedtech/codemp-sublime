@@ -5,8 +5,7 @@ use codemp::errors::Error as CodempError;
 
 use pyo3::{
     prelude::*,
-    exceptions::{PyConnectionError, PyRuntimeError, PyBaseException}, 
-    types::PyString
+    exceptions::{PyConnectionError, PyRuntimeError, PyBaseException}
 };
 
 struct PyCodempError(CodempError);
@@ -28,6 +27,9 @@ impl From<PyCodempError> for PyErr {
             CodempError::InvalidState { msg } => {
                 PyRuntimeError::new_err(format!("Invalid state: {}", msg))
             },
+            CodempError::Deadlocked => {
+                PyRuntimeError::new_err(format!("Deadlock, retry."))
+            },
             CodempError::Filler { message } => {
                 PyBaseException::new_err(format!("Generic error: {}", message))
             }
@@ -42,7 +44,6 @@ fn codemp_init<'a>(py: Python<'a>) -> PyResult<Py<PyClientHandle>> {
 }
 
 #[pyclass]
-#[derive(Clone)]
 struct PyClientHandle(Arc<CodempInstance>);
 
 impl From::<CodempInstance> for PyClientHandle {
@@ -62,6 +63,22 @@ impl PyClientHandle {
                 .await
                 .map_err(PyCodempError::from)?;
             Ok(())
+        })
+    }
+
+    // join a workspace
+    fn join<'a>(&'a self, py: Python<'a>, session: String) -> PyResult<&'a PyAny> {
+        let rc = self.0.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let curctrl: PyCursorController = rc.join(session.as_str())
+                .await
+                .map_err(PyCodempError::from)?
+                .into();
+
+            Python::with_gil(|py| {
+                Ok(Py::new(py, curctrl)?)
+            })
         })
     }
 
@@ -87,22 +104,6 @@ impl PyClientHandle {
 
             Python::with_gil(|py| {
                 Ok(Py::new(py, buffctrl)?)
-            })
-        })
-    }
-
-    // join a workspace
-    fn join<'a>(&'a self, py: Python<'a>, session: String) -> PyResult<&'a PyAny> {
-        let rc = self.0.clone();
-
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let curctrl: PyCursorController = rc.join(session.as_str())
-                .await
-                .map_err(PyCodempError::from)?
-                .into();
-
-            Python::with_gil(|py| {
-                Ok(Py::new(py, curctrl)?)
             })
         })
     }
@@ -158,98 +159,47 @@ impl PyClientHandle {
             Ok(())
         })
     }
-}
 
-#[pyclass]
-struct PyCursorController {
-    handle: Arc<CodempCursorController>,
-    cb_trigger: Option<tokio::sync::mpsc::UnboundedSender<()>>
-}
+    fn select_buffer<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
+        let rc = self.0.clone();
 
-impl From::<Arc<CodempCursorController>> for PyCursorController {
-    fn from(value: Arc<CodempCursorController>) -> Self {
-        PyCursorController {
-            handle: value,
-            cb_trigger: None
-        }
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let cont = rc.select_buffer()
+                .await
+                .map_err(PyCodempError::from)?;
+
+            Ok(cont)
+        })
     }
 }
 
-fn py_cursor_callback_wrapper(cb: PyObject) 
-    -> Box<dyn FnMut(CodempCursorEvent) -> () + Send + Sync + 'static>
-{
-    let closure = move |data: CodempCursorEvent| {
-        let args: PyCursorEvent = data.into();
-        Python::with_gil(|py| { let _ = cb.call1(py, (args,)); });
-    };
-    Box::new(closure)
+
+/* ########################################################################### */
+
+#[pyclass]
+struct PyCursorController(Arc<CodempCursorController>);
+
+impl From::<Arc<CodempCursorController>> for PyCursorController {
+    fn from(value: Arc<CodempCursorController>) -> Self {
+        PyCursorController(value)
+    }
 }
 
 #[pymethods]
 impl PyCursorController {
-    // fn callback<'a>(&'a self, py: Python<'a>, coro_py: Py<PyAny>, caller_id: Py<PyString>) -> PyResult<&'a PyAny> {
-    //     let mut rc = self.0.clone();
-    //     let cb = coro_py.clone();
-    //     // We want to start polling the ControlHandle and call the callback every time
-    //     // we have something.
-
-    //     pyo3_asyncio::tokio::future_into_py(py, async move {
-    //         while let Some(op) = rc.poll().await {
-    //             let start = op.start.unwrap_or(Position { row: 0, col: 0});
-    //             let end = op.end.unwrap_or(Position { row: 0, col: 0});
-
-    //             let cb_fut = Python::with_gil(|py| -> PyResult<_> {
-    //                 let args = (op.user, caller_id.clone(), op.buffer, (start.row, start.col), (end.row, end.col));
-    //                 let coro = cb.call1(py, args)?;
-    //                 pyo3_asyncio::tokio::into_future(coro.into_ref(py))
-    //             })?;
-
-    //             cb_fut.await?;
-    //         }
-    //         Ok(())
-    //     })
-    // }
-    fn drop_callback(&mut self) -> PyResult<()> {
-        if let Some(channel) = &self.cb_trigger {
-            channel.send(())
-                .map_err(CodempError::from)
-                .map_err(PyCodempError::from)?;
-
-            self.cb_trigger = None;
-        }
-        Ok(())
-    }
-
-    fn callback<'a>(&'a mut self, py_cb: Py<PyAny>) -> PyResult<()> {
-        if let Some(_channel) = &self.cb_trigger {
-            Err(PyCodempError::from(CodempError::InvalidState { msg: "A callback is already running.".into() }).into())
-        } else {
-            let rt = pyo3_asyncio::tokio::get_runtime();
-
-            // create a channel to stop the callback task running on the tokio runtime.
-            // and save the sendent inside the python object, so that we can later call it.
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            self.cb_trigger = Some(tx);
-
-            self.handle.callback(rt, rx, py_cursor_callback_wrapper(py_cb));
-            Ok(())
-        }
-    }
 
     fn send<'a>(&'a self, path: String, start: (i32, i32), end: (i32, i32)) -> PyResult<()> {
-        let rc = self.handle.clone();
         let pos = CodempCursorPosition {
             buffer: path,
             start: Some(start.into()),
             end: Some(end.into())
         };
 
-        rc.send(pos).map_err(PyCodempError::from)?;
-        Ok(())
+        Ok(self.0.send(pos).map_err(PyCodempError::from)?)
     }
 
     fn try_recv(&self, py: Python<'_>) -> PyResult<PyObject> {
-        match self.handle.try_recv().map_err(PyCodempError::from)? {
+        match self.0.try_recv().map_err(PyCodempError::from)? {
             Some(cur_event) => {
                 let evt = PyCursorEvent::from(cur_event);
                 Ok(evt.into_py(py))
@@ -259,7 +209,7 @@ impl PyCursorController {
     }
 
     fn recv<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let rc = self.handle.clone();
+        let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let cur_event: PyCursorEvent = rc.recv()
@@ -273,7 +223,7 @@ impl PyCursorController {
     }
 
     fn poll<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let rc = self.handle.clone();
+        let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             Ok(rc.poll().await.map_err(PyCodempError::from)?)
@@ -282,129 +232,30 @@ impl PyCursorController {
 }
 
 #[pyclass]
-struct PyBufferController {
-    handle: Arc<CodempBufferController>,
-    cb_trigger: Option<tokio::sync::mpsc::UnboundedSender<()>>
-}
+struct PyBufferController(Arc<CodempBufferController>);
 
 impl From::<Arc<CodempBufferController>> for PyBufferController {
     fn from(value: Arc<CodempBufferController>) -> Self { 
-        PyBufferController{
-            handle: value,
-            cb_trigger: None
-        }
+        PyBufferController(value)
     }
-}
-
-fn py_buffer_callback_wrapper(cb: PyObject) 
-    -> Box<dyn FnMut(CodempTextChange) -> () + Send + Sync + 'static>
-{
-    let closure = move |data: CodempTextChange| {
-        let args: PyTextChange = data.into();
-        Python::with_gil(|py| { let _ = cb.call1(py, (args,)); });
-    };
-    Box::new(closure)
 }
 
 #[pymethods]
 impl PyBufferController {
-    // fn callback<'a>(&'a self, py: Python<'a>, coro_py: Py<PyAny>, caller_id: Py<PyString>) -> PyResult<&'a PyAny> {
-    //     let mut rc = self.0.clone();
-    //     let cb = coro_py.clone();
-    //      // We want to start polling the ControlHandle and call the callback every time
-    //      // we have something.
-
-    //     pyo3_asyncio::tokio::future_into_py(py, async move {
-    //         while let Some(edit) = rc.poll().await {
-    //             let start = edit.span.start;
-    //             let end = edit.span.end;
-    //             let text = edit.content;
-
-    //             let cb_fut = Python::with_gil(|py| -> PyResult<_> {
-    //                 let args = (caller_id.clone(), start, end, text);
-    //                 let coro = cb.call1(py, args)?;
-    //                 pyo3_asyncio::tokio::into_future(coro.into_ref(py))
-    //             })?;
-
-    //             cb_fut.await?;
-    //         }
-    //         Ok(())
-    //     })
-    // }
-
-    fn drop_callback(&mut self) -> PyResult<()> {
-        if let Some(channel) = &self.cb_trigger {
-            channel.send(())
-                .map_err(CodempError::from)
-                .map_err(PyCodempError::from)?;
-
-            self.cb_trigger = None;
-        }
-        Ok(())
-    }
-
-    fn callback<'a>(&'a mut self, py_cb: Py<PyAny>) -> PyResult<()> {
-        if let Some(_channel) = &self.cb_trigger {
-            Err(PyCodempError::from(CodempError::InvalidState { msg: "A callback is already running.".into() }).into())
-        } else {
-            let rt = pyo3_asyncio::tokio::get_runtime();
-
-            // could this be a oneshot channel?
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            self.cb_trigger = Some(tx);
-
-            self.handle.callback(rt, rx, py_buffer_callback_wrapper(py_cb));
-            Ok(())
-        }
-    }
-
-
-    fn replace(&self, txt: &str) -> PyResult<()> {
-        if let Some(op) = self.handle.replace(txt) {
-            self.handle.send(op).map_err(PyCodempError::from)?;
-        }
-        Ok(())
-    }
-
-    fn delta(&self, start: usize, txt: &str, end: usize) -> PyResult<()> {
-        if let Some(op) = self.handle.delta(start, txt, end){
-            self.handle.send(op).map_err(PyCodempError::from)?;
-        }
-        Ok(())
-    }
-
-    fn insert(&self, txt: &str, pos: u64) -> PyResult<()> {
-        let op = self.handle.insert(txt, pos);
-        self.handle.send(op).map_err(PyCodempError::from)?;
-        Ok(())
-    }
-
-    fn delete(&self, pos: u64, count: u64) -> PyResult<()> {
-        let op = self.handle.delete(pos, count);
-        self.handle.send(op).map_err(PyCodempError::from)?;
-        Ok(())
-    }
-
-    fn cancel(&self, pos: u64, count: u64) -> PyResult<()> {
-        let op = self.handle.cancel(pos, count);
-        self.handle.send(op).map_err(PyCodempError::from)?;
-        Ok(())
-    }
-
-    fn content(&self, py: Python<'_>) -> PyResult<Py<PyString>> {
-        let cont: Py<PyString> = PyString::new(py, self.handle.content().as_str()).into();
-        Ok(cont)
-    }
 
     // TODO: What to do with this send? 
     // does it make sense to implement it at all for the python side??
 
-    // fn send<'a>(&self, py: Python<'a>, skip: usize, text: String, tail: usize) -> PyResult<&'a PyAny>{
-    //     todo!()
-    // }
+    fn send(&self, start: usize, end: usize, txt: String) -> PyResult<()>{
+        let op = CodempTextChange { 
+            span: start..end,
+            content: txt.into() 
+        };
+        Ok(self.0.send(op).map_err(PyCodempError::from)?)
+    }
 
     fn try_recv(&self, py: Python<'_>) -> PyResult<PyObject> {
-        match self.handle.try_recv().map_err(PyCodempError::from)? {
+        match self.0.try_recv().map_err(PyCodempError::from)? {
             Some(txt_change) => {
                 let evt = PyTextChange::from(txt_change);
                 Ok(evt.into_py(py))
@@ -414,7 +265,7 @@ impl PyBufferController {
     }
 
     fn recv<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let rc = self.handle.clone();
+        let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let txt_change: PyTextChange = rc.recv()
@@ -428,7 +279,7 @@ impl PyBufferController {
     }
 
     fn poll<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let rc = self.handle.clone();
+        let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             Ok(rc.poll().await.map_err(PyCodempError::from)?)
