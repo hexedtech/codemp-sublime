@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 codemp = { git = "ssh://git@github.com/codewithotherpeopleandchangenamelater/codemp.git", branch = "woot"}
-pyo3 = { version = "0.19", features = ["extension-module"] }
-pyo3-asyncio = { version = "0.19", features = ["tokio-runtime"] }
+pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
 tokio = "1.29.1"
 
 [build-dependencies]
