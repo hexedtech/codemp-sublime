@@ -27,7 +27,6 @@ _regions_colors = [
 	"region.pinkish"
 ]
 
-
 ## Initialisation and Deinitialisation
 ##############################################################################
 
@@ -151,26 +150,27 @@ async def join_workspace(session):
 
 async def move_cursor(cursor_controller):
 	global _regions_colors
-	# print("received cursor event", cursor_event.start, cursor_event.end, cursor_event.buffer)
 
+	status_log("spinning up cursor worker...")
 	# TODO: make the matching user/color more solid. now all users have one color cursor.
 	# Maybe make all cursors the same color and only use annotations as a discriminant.
 	# idea: use a user id hash map that maps to a color.
 	try:
 		while cursor_event := await cursor_controller.recv():
 			buffer = get_buffer_from_remote_name(cursor_event.buffer)
+
 			if buffer:
-				view = buffer.buffer.primary_view()
-				reg = rowcol_to_region(view, cursor_event.start, cursor_event.end)
+				reg = rowcol_to_region(buffer.view, cursor_event.start, cursor_event.end)
 				reg_flags = sublime.RegionFlags.DRAW_EMPTY | sublime.RegionFlags.DRAW_NO_FILL
 
-				view.add_regions(
+				buffer.view.add_regions(
 					"codemp_cursors", 
 					[reg], 
 					flags = reg_flags, 
-					scope=_regions_colors[2], 
+					scope=_regions_colors[hash(cursor_event.user) % len(_regions_colors)], 
 					annotations = [cursor_event.user], 
 					annotation_color="#000")
+
 	except asyncio.CancelledError:
 	    status_log("cursor worker stopped...")
 
@@ -252,6 +252,7 @@ class CodempSublimeBuffer():
 			while text_change := await self.controller.recv():
 				# In case a change arrives to a background buffer, just apply it. We are not listening on it.
 				# Otherwise, interrupt the listening to avoid echoing back the change just received.
+				status_log("recieved txt change: ")
 				active = is_active(self.view)
 				if active:
 					safe_listener_detach(_txt_change_listener)
