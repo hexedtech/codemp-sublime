@@ -44,4 +44,11 @@
       // 'server_buffer' : 'test'
     },
   },
+  {
+    "caption": "Codemp: Disconnect Buffer",
+    "command": "codemp_disconnect_buffer",
+    "arg": {
+      // 'remote_name' : 'name of buffer to disconnect'
+    }
+  },
 ]

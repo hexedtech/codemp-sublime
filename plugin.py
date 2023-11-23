@@ -14,6 +14,7 @@ _buffers = []
 _client = None
 _cursor_controller = None
 _txt_change_listener = None
+_exit_handler_id = None
 
 _regions_colors = [
 	"region.redish",
@@ -26,39 +27,52 @@ _regions_colors = [
 	"region.pinkish"
 ]
 
-# WIP ##
-class CodempSublimeBuffer():
-	def __init__(self, sublime_buffer, server_id):
-		self.buffer = sublime_buffer
-		self.server_id = server_id
-		self.skip_resend = False
 
-	async def attach(self, client, cb):
-		self.controller = await client.attach(self.server_id)
-		status_log("registring callback for buffer: {}".format(self.buffer.primary_view().file_name()))
-		self.controller.callback(cb(self.buffer))
-		for v in self.buffer.views():
-			v.settings()["codemp_buffer"] = True
+## Initialisation and Deinitialisation
+##############################################################################
 
-	async def detach(self, client):
-		await client.disconnect_buffer(self.server_id)
-		self.controller.drop_callback()
-		for v in self.buffer.views():
-			del v.settings()["codemp_buffer"]
-			v.erase_regions("codemp_cursors")
-
-def get_matching_codemp_buffer_from_buffer_id(buffer_id):
+async def disconnect_client():
+	global _client
+	global _cursor_controller
 	global _buffers
-	for b in _buffers:
-		if b.buffer.id() == buffer_id:
-			return b
-def get_matching_codemp_buffer_from_server_id(server_id):
-	global _buffers
-	for b in _buffers:
-		if b.server_id == server_id:
-			return b
-# WIP ##
+	global _txt_change_listener
+	global _tasks
+	status_log("disconnecting...")
 
+	# buffers clean up after themselves after detaching
+	for buff in _buffers:
+		await buff.detach(_client)
+
+	for task in _tasks:
+		task.cancel()
+
+	if _cursor_controller:
+		await _client.leave_workspace()
+
+	if _txt_change_listener:
+		safe_listener_detach(_txt_change_listener)
+
+def plugin_loaded():
+	global _client
+	global _txt_change_listener
+	global _exit_handler_id
+	_client = CodempClient() # create an empty instance of the codemp client.
+	_txt_change_listener = CodempClientTextChangeListener() # instantiate the listener to attach around.
+	
+	# instantiate and start a global asyncio event loop.
+	# pass in the exit_handler coroutine that will be called upon relasing the event loop.
+	_exit_handler_id = sublime_asyncio.acquire(disconnect_client) 
+	status_log("plugin loaded")
+
+def plugin_unloaded():
+	sublime_asyncio.release(False, _exit_handler_id)
+	# disconnect the client.
+	status_log("unloading")
+
+
+
+## Utils ##
+##############################################################################
 def status_log(msg):
 	sublime.status_message("[codemp] {}".format(msg))
 	print("[codemp] {}".format(msg))
@@ -79,10 +93,11 @@ def populate_view(view, content):
 	view.run_command("codemp_replace_text", {
 		"start": 0,
 		"end": view.size(),
-		"content": content
+		"content": content,
+		"change_id": view.change_id(),
 	})
 
-def get_matching_view_from_local_path(path):
+def get_view_from_local_path(path):
 	for window in sublime.windows():
 		for view in window.views():
 			if view.file_name() == path:
@@ -93,42 +108,30 @@ def rowcol_to_region(view, start, end):
 	b = view.text_point(end[0], end[1])
 	return sublime.Region(a, b)
 
-
-def plugin_loaded():
-	global _client
-	global _txt_change_listener
-	_client = CodempClient() # create an empty instance of the codemp client.
-	_txt_change_listener = CodempClientTextChangeListener() # instantiate the listener to attach around.
-	sublime_asyncio.acquire() # instantiate and start a global asyncio event loop.
-
-def plugin_unloaded():
-	global _client
-	global _cursor_controller
+def get_buffer_from_buffer_id(buffer_id):
 	global _buffers
-	global _txt_change_listener
-	for buff in _buffers:
-		sublime_asyncio.dispatch(buff.detach(_client))
-	
-	if _cursor_controller:
-		_cursor_controller.drop_callback()
+	for b in _buffers:
+		if b.view.buffer_id() == buffer_id:
+			return b
 
-	if _txt_change_listener:
-		if _txt_change_listener.is_attached():
-			_txt_change_listener.detach()
-		_txt_change_listener = None
+def get_buffer_from_remote_name(remote_name):
+	global _buffers
+	for b in _buffers:
+		if b.remote_name == remote_name:
+			return b
 
-	# disconnect the client.
-	sublime_asyncio.dispatch(_client.leave_workspace())
-	print("unloading")
+def is_active(view):
+	if view.window().active_view() == view:
+		return True
+	return False
 
+def safe_listener_detach(txt_listener):
+	if txt_listener.is_attached():
+		txt_listener.detach()
 
-async def join_workspace(session):
-	global _client
-	global _cursor_controller
-
-	status_log("Joining workspace: {}".format(session))
-	_cursor_controller = await _client.join(session)
-	_cursor_controller.callback(move_cursor_cb)
+## Main logic (build coroutines to be dispatched through sublime_asyncio)
+# Connection command
+##############################################################################
 
 async def connect_command(server_host, session):
 	global _client
@@ -136,139 +139,169 @@ async def connect_command(server_host, session):
 	await _client.connect(server_host)
 	await join_workspace(session)
 
-async def join_buffer_command(view, buffer_path):
+# Workspace and cursor (attaching, sending and receiving)
+##############################################################################
+async def join_workspace(session):
 	global _client
-	global _buffers
+	global _cursor_controller
 
-	try:
-		buffer = CodempSublimeBuffer(view.buffer(), buffer_path)
-		await buffer.attach(_client, apply_buffer_change_cb)
-		_buffers.append(buffer) 
+	status_log("Joining workspace: {}".format(session))
+	_cursor_controller = await _client.join(session)
+	sublime_asyncio.dispatch(move_cursor(_cursor_controller), store_task("move-cursor"))
 
-		content = buffer.controller.get_content()
-		populate_view(view, content)
-
-	except Exception as e:
-		sublime.error_message("Could not join buffer: {}".format(e))
-		return
-
-	view.window().focus_view(view)
-	view.set_status("z_codemp_buffer", "[Codemp]")
-
-async def share_buffer_command(buffer_path, server_id = "test"):
-	global _client
-	global _buffers
-
-	status_log("Sharing buffer {}".format(buffer_path))
-
-	view = get_matching_view_from_local_path(buffer_path)
-	contents = get_contents(view)
-
-	try:
-		await _client.create(server_id, contents)
-
-		buffer = CodempSublimeBuffer(view.buffer(), server_id)
-		await buffer.attach(_client, apply_buffer_change_cb)
-
-		_buffers.append(buffer)
-	except Exception as e:
-		sublime.error_message("Could not share buffer: {}".format(e))
-		return
-
-	# we need to focus the view to trigger the on_activate for the text
-	# change event listener attach
-	view.window().focus_view(view)
-	view.set_status("z_codemp_buffer", "[Codemp]")
-
-
-def move_cursor_cb(cursor_event):
+async def move_cursor(cursor_controller):
 	global _regions_colors
 	# print("received cursor event", cursor_event.start, cursor_event.end, cursor_event.buffer)
 
 	# TODO: make the matching user/color more solid. now all users have one color cursor.
 	# Maybe make all cursors the same color and only use annotations as a discriminant.
 	# idea: use a user id hash map that maps to a color.
-	buffer = get_matching_codemp_buffer_from_server_id(cursor_event.buffer)
-	if buffer:
-		view = buffer.buffer.primary_view()
-		reg = rowcol_to_region(view, cursor_event.start, cursor_event.end)
-		reg_flags = sublime.RegionFlags.DRAW_EMPTY | sublime.RegionFlags.DRAW_NO_FILL
+	try:
+		while cursor_event := await cursor_controller.recv():
+			buffer = get_buffer_from_remote_name(cursor_event.buffer)
+			if buffer:
+				view = buffer.buffer.primary_view()
+				reg = rowcol_to_region(view, cursor_event.start, cursor_event.end)
+				reg_flags = sublime.RegionFlags.DRAW_EMPTY | sublime.RegionFlags.DRAW_NO_FILL
 
-		view.add_regions(
-			"codemp_cursors", 
-			[reg], 
-			flags = reg_flags, 
-			scope=_regions_colors[2], 
-			annotations = [cursor_event.user], 
-			annotation_color="#000")
+				view.add_regions(
+					"codemp_cursors", 
+					[reg], 
+					flags = reg_flags, 
+					scope=_regions_colors[2], 
+					annotations = [cursor_event.user], 
+					annotation_color="#000")
+	except asyncio.CancelledError:
+	    status_log("cursor worker stopped...")
 
 def send_cursor(view):
 	global _cursor_controller
 
-	server_id = get_matching_codemp_buffer_from_buffer_id(view.buffer_id()).server_id
+	buffer_name = get_buffer_from_buffer_id(view.buffer_id()).remote_name
 	region = view.sel()[0] # TODO: only the last placed cursor/selection.
 	start = view.rowcol(region.begin()) #only counts UTF8 chars
 	end = view.rowcol(region.end())
 	
-	_cursor_controller.send(server_id, start, end)
+	_cursor_controller.send(buffer_name, start, end)
 
-def apply_buffer_change_cb(buffer):
-	def buffer_callback(text_change):
+# Buffer Controller (managing text modifications)
+##############################################################################
+
+# This class is used as an abstraction between the local buffers (sublime side) and the
+# remote buffers (codemp side), to handle the syncronicity.
+class CodempSublimeBuffer():
+	def __init__(self, view, remote_name):
+		self.view = view
+		self.remote_name = remote_name
+		self.worker_task_name = "buffer-worker-{}".format(self.remote_name)
+
+	async def attach(self, client):
 		global _txt_change_listener
 
-		# In case a change arrives to a background buffer, just apply it. We are not listening on it.
-		# Otherwise, interrupt the listening to avoid echoing back the change just received.
-		is_active_view = buffer.view().window().active_view() == buffer.view()
-		if is_active_view:
-			_txt_change_listener.detach()
+		status_log("attaching local buffer '{}' to '{}'".format(self.view.file_name(), self.remote_name))
+		# attach to the matching codemp buffer
+		self.controller = await client.attach(self.remote_name)
 
-		# we need to go through a sublime text command, since the method, view.replace
-		# needs an edit token, that is obtained only when calling a textcommand associated with a view.
-		view.run_command("codemp_replace_text", {
-			"start": text_change.start_incl,
-			"end": text_change.end_excl,
-			"content": text_change.content
-		})
-		if is_active_view:
-			_txt_change_listener.attach(buffer)
+		# if the view is already active calling focus_view() will not trigger the on_activate()
+		if is_active(self.view):
+			status_log("\tattaching text listener...")
+			safe_listener_detach(_txt_change_listener)
+			_txt_change_listener.attach(self.view.buffer())
+		else:
+			self.view.window().focus_view(self.view)
+		
+		# start the buffer worker that waits for text_changes in the worker thread
+		sublime_asyncio.dispatch(self.apply_buffer_change(), store_task(self.worker_task_name))
+		
+		# mark all views associated with the buffer as being connected to codemp
+		for v in self.view.buffer().views():
+			v.set_status("z_codemp_buffer", "[Codemp]")
+			v.settings()["codemp_buffer"] = True
 
-	return buffer_callback
+	async def detach(self, client):
+		global _txt_change_listener
+		global _tasks
+		global _buffers
+		status_log("detaching buffer '{}' ({})".format(self.remote_name, self.view.file_name()))
+		
+		if is_active(self.view):
+			safe_listener_detach(_txt_change_listener)
 
-def send_buffer_change(buffer, changes):
-	codemp_buffer = get_matching_codemp_buffer_from_buffer_id(buffer.id())
-	view = buffer.primary_view()
-	start, txt, end = compress_changes(view, changes)
+		await client.disconnect_buffer(self.remote_name)
 
-	# we can't use view.size() since now view has the already modified buffer,
-	# but we need to clip wrt the unmodified buffer.
-	contlen = len(codemp_buffer.controller.get_content())
-	codemp_buffer.controller.delta(max(0, start), txt, min(end, contlen))
+		# take down the worker task
+		for task in _tasks:
+			if task.get_name() == self.worker_task_name:
+				task.cancel()
+				_tasks.remove(task)
+				break
 
-	# time.sleep(0.1)
-	# print("server buffer: -------")
-	# print(codemp_buffer.controller.get_content())
+		# remove yourself from the _buffers
+		_buffers.remove(self)
 
-def compress_changes(view, changes):
-	# Sublime text on_text_changed events, gives a list of changes.
-	# in case of simple insertion or deletion this is fine.
-	# but if we swap a string (select it and add another string in it's place) or have multiple selections
-	# or do an undo of some kind after the just mentioned events we receive multiple split text changes, 
-	# e.g. select the world `hello` and replace it with `12345`: Sublime will separate it into two singular changes,
-	# first add `12345` in front of `hello`: `12345hello` then, delete the `hello`.
-	# The gotcha here is that now we have an issue of indexing inside the buffer. when adding `12345` we shifted the index of the
-	# start of the word `hello` to the right by 5.
-	# By sending these changes one by one generated some buffer length issues in delta, since we have an interdependency of the
-	# changes.
+		# clean up all the stuff we left around
+		for v in self.view.buffer().views():
+			del v.settings()["codemp_buffer"]
+			v.erase_status("z_codemp_buffer")
+			v.erase_regions("codemp_cursors")
 
-	# as a workaround, whenever we receive multiple changes we compress all of them into a "single one" that delta understands,
-	# namely, we get a bounding region to the change, and all the text in between.
-	if len(changes) == 1:
-		# print("[change]", "[", changes[0].a.pt, changes[0].b.pt, "]", changes[0].str)
-		return (changes[0].a.pt, changes[0].str, changes[0].b.pt)
+	async def apply_buffer_change(self):
+		global _txt_change_listener
+		status_log("spinning up '{}' buffer worker...".format(self.remote_name))
+		try:
+			while text_change := await self.controller.recv():
+				# In case a change arrives to a background buffer, just apply it. We are not listening on it.
+				# Otherwise, interrupt the listening to avoid echoing back the change just received.
+				active = is_active(self.view)
+				if active:
+					safe_listener_detach(_txt_change_listener)
 
-	return walk_compress_changes(view, changes)
+				# we need to go through a sublime text command, since the method, view.replace
+				# needs an edit token, that is obtained only when calling a textcommand associated with a view.
+				self.view.run_command("codemp_replace_text", {
+					"start": text_change.start_incl,
+					"end": text_change.end_excl,
+					"content": text_change.content,
+					"change_id": self.view.change_id()
+				})
 
-def walk_compress_changes(view, changes):
+				if active:
+					_txt_change_listener.attach(self.view.buffer())
+		except asyncio.CancelledError:
+		    status_log("'{}' buffer worker stopped...".format(self.remote_name))
+
+	def send_buffer_change(self, changes):
+		# Sublime text on_text_changed events, gives a list of changes.
+		# in case of simple insertion or deletion this is fine.
+		# but if we swap a string (select it and add another string in it's place) or have multiple selections
+		# or do an undo of some kind after the just mentioned events we receive multiple split text changes, 
+		# e.g. select the world `hello` and replace it with `12345`: Sublime will separate it into two singular changes,
+		# first add `12345` in front of `hello`: `12345hello` then, delete the `hello`.
+		# The gotcha here is that now we have an issue of indexing inside the buffer. when adding `12345` we shifted the index of the
+		# start of the word `hello` to the right by 5.
+		# By sending these changes one by one generated some buffer length issues in delta, since we have an interdependency of the
+		# changes.
+
+		# if the historic region is empty, we are inserting.
+		# if it isn't we are deleting.
+		for change in changes:
+			region = sublime.Region(change.a.pt, change.b.pt)
+			status_log("sending txt change: Reg({} {}) -> '{}'".format(region.begin(), region.end(), change.str))
+			self.controller.send(region.begin(), region.end(), change.str)
+
+		# as a workaround, whenever we receive multiple changes we compress all of them into a "single one" that delta understands,
+		# namely, we get a bounding region to the change, and all the text in between.
+		# if len(changes) == 1:
+		# 	region = self.view.transform_region_from(sublime.Region(changes[0].a.pt, changes[0].b.pt), self.old_change_id)
+		# 	txt = changes[0].str
+		# else:
+		# 	start, end = compress_change_region(changes)
+		# 	region = self.view.transform_region_from(sublime.Region(start, end), self.old_change_id)
+		# 	txt = view.substr(region)
+
+		# self.controller.send(region.begin(), region.end(), txt)
+
+def compress_change_region(changes):
 	# the bounding region of all text changes.
 	txt_a = float("inf")
 	txt_b = 0
@@ -321,27 +354,63 @@ def walk_compress_changes(view, changes):
 
 		# print("\t[buff change]", change.a.pt, change.str, "(", change.len_utf8,")", change.b.pt)
 
-	txt = view.substr(sublime.Region(txt_a, txt_b))
 	# print("[walking txt]", "[", txt_a, txt_b, "]", txt)
 	# print("[walking reg]", "[", reg_a, reg_b, "]")
-	return reg_a, txt, reg_b
+	return reg_a, reg_b
 
-# Sublime interface
+
+# we call this command manually to have access to the edit token.
+class CodempReplaceTextCommand(sublime_plugin.TextCommand):
+	def run(self, edit, start, end, content, change_id):
+		# we modify the region to account for any change that happened in the mean time
+		region = self.view.transform_region_from(sublime.Region(start, end), change_id)
+		self.view.replace(edit, region, content)
+
+async def join_buffer_command(view, remote_name):
+	global _client
+	global _buffers
+
+	try:
+		buffer = CodempSublimeBuffer(view, remote_name)
+		await buffer.attach(_client)
+		_buffers.append(buffer)
+
+		## we should receive all contents from the server upon joining.
+	except Exception as e:
+		sublime.error_message("Could not join buffer: {}".format(e))
+		return
+
+async def share_buffer_command(buffer_path, remote_name = "test"):
+	global _client
+	global _buffers
+
+	view = get_view_from_local_path(buffer_path)
+	contents = get_contents(view)
+
+	try:
+		await _client.create(remote_name, contents)
+		await join_buffer_command(view, remote_name)
+	except Exception as e:
+		sublime.error_message("Could not share buffer: {}".format(e))
+		return
+
+async def disconnect_buffer_command(buffer):
+	global _client
+	await buffer.detach(_client)
+
+# Listeners
 ##############################################################################
 
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 	@classmethod
 	def is_applicable(cls, settings):
-		# print("checking view applicability: ", settings.get("codemp_buffer", False))
 		return settings.get("codemp_buffer", False)
-		# return True
 
 	@classmethod
 	def applies_to_primary_view_only(cls):
 		return False
 
 	def on_selection_modified_async(self):
-		# pass
 		send_cursor(self.view)
 
 	# We only edit on one view at a time, therefore we only need one TextChangeListener
@@ -355,10 +424,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 	def on_deactivated(self):
 		global _txt_change_listener
 		print("view {} deactivated".format(self.view.id()))
-		_txt_change_listener.detach()
-
-	# def on_text_command(self, cmd, args):
-	# 	print(cmd, args)
+		safe_listener_detach(_txt_change_listener)
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
@@ -368,13 +434,23 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 		# we'll do it by hand with .attach(buffer).
 		return False
 
-	def on_text_changed_async(self, changes):
-		send_buffer_change(self.buffer, changes)
+	# lets make this blocking :D
+	# def on_text_changed_async(self, changes):
+	def on_text_changed(self, changes):
+		subl_buffer = get_buffer_from_buffer_id(self.buffer.id())
+		subl_buffer.send_buffer_change(changes)
 
 
+# Commands:
+# 	codemp_connect: 	connect to a server.
+# 	codemp_join: 		join a workspace with a given name within the server.
+#	codemp_share: 		shares a buffer with a given name in the workspace.
+#
+# Internal commands:
+#	replace_text: swaps the content of a view with the given text.
+#
 # Connect Command
 #############################################################################
-# See the proxy command class at the bottom
 class CodempConnectCommand(sublime_plugin.WindowCommand):
 	def run(self, server_host, session):
 		sublime_asyncio.dispatch(connect_command(server_host, session))
@@ -400,9 +476,29 @@ class CodempWorkspaceInputHandler(sublime_plugin.TextInputHandler):
 	def initial_text(self):
 		return "default"
 
+
+
+# Join Command
+#############################################################################
+class CodempJoinCommand(sublime_plugin.WindowCommand):
+	def run(self, server_buffer):
+		view = self.window.new_file(flags=sublime.NewFileFlags.TRANSIENT)
+		sublime_asyncio.dispatch(join_buffer_command(view, server_buffer))
+	
+	def input_description(self):
+		return 'Join Buffer:'
+
+	def input(self, args):
+		if 'server_buffer' not in args:
+			return ServerBufferInputHandler()
+
+class ServerBufferInputHandler(sublime_plugin.TextInputHandler):
+	def initial_text(self):
+		return "What buffer should I join?"
+
+
 # Share Command
 #############################################################################
-# see proxy command at the bottom
 class CodempShareCommand(sublime_plugin.WindowCommand):
 	def run(self, sublime_buffer_path, server_id):
 		sublime_asyncio.dispatch(share_buffer_command(sublime_buffer_path, server_id))
@@ -432,31 +528,30 @@ class SublimeBufferPathInputHandler(sublime_plugin.ListInputHandler):
 class ServerIdInputHandler(sublime_plugin.TextInputHandler):
 	def initial_text(self):
 		return "Buffer name on server"
-# Join Command
+
+# Disconnect Buffer Command
 #############################################################################
-class CodempJoinCommand(sublime_plugin.WindowCommand):
-	def run(self, server_buffer):
-		view = self.window.new_file(flags=sublime.NewFileFlags.TRANSIENT)
-		sublime_asyncio.dispatch(join_buffer_command(view, server_buffer))
+class CodempDisconnectBufferCommand(sublime_plugin.WindowCommand):
+	def run(self, remote_name):
+		buffer = get_buffer_from_remote_name(remote_name)
+		sublime_asyncio.dispatch(disconnect_buffer_command(buffer))
 	
 	def input(self, args):
-		if 'server_buffer' not in args:
-			return ServerBufferInputHandler()
+		if 'remote_name' not in args:
+			return RemoteNameInputHandler()
 
 	def input_description(self):
-		return 'Join Buffer:'
+		return 'Disconnect Buffer:'
 
-class ServerBufferInputHandler(sublime_plugin.TextInputHandler):
-	def initial_text(self):
-		return "What buffer should I join?"
+class RemoteNameInputHandler(sublime_plugin.ListInputHandler):
+	def list_items(self):
+		global _buffers
+		ret_list = []
 
-# Replace Text Command
-#############################################################################
-# we call this command manually to have access to the edit token.
-class CodempReplaceTextCommand(sublime_plugin.TextCommand):
-	def run(self, edit, start, end, content):
-		# start included, end excluded
-		self.view.replace(edit, sublime.Region(start, end), content)
+		for buff in _buffers:
+			ret_list.append(buff.remote_name)
+
+		return ret_list
 
 # Proxy Commands ( NOT USED )
 #############################################################################

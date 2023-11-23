@@ -243,9 +243,6 @@ impl From::<Arc<CodempBufferController>> for PyBufferController {
 #[pymethods]
 impl PyBufferController {
 
-    // TODO: What to do with this send? 
-    // does it make sense to implement it at all for the python side??
-
     fn send(&self, start: usize, end: usize, txt: String) -> PyResult<()>{
         let op = CodempTextChange { 
             span: start..end,
