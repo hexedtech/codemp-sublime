@@ -16,6 +16,17 @@ _cursor_controller = None
 _txt_change_listener = None
 _exit_handler_id = None
 
+_palette = [
+	"var(--redish)",
+	"var(--orangish)",
+	"var(--yellowish)",
+	"var(--greenish)",
+	"var(--cyanish)",
+	"var(--bluish)",
+	"var(--purplish)",
+	"var(--pinkish)",
+]
+
 _regions_colors = [
 	"region.redish",
 	"region.orangeish",
@@ -41,13 +52,10 @@ async def disconnect_client():
 	# buffers clean up after themselves after detaching
 	for buff in _buffers:
 		await buff.detach(_client)
-
 	for task in _tasks:
 		task.cancel()
-
 	if _cursor_controller:
 		await _client.leave_workspace()
-
 	if _txt_change_listener:
 		safe_listener_detach(_txt_change_listener)
 
@@ -67,7 +75,6 @@ def plugin_unloaded():
 	sublime_asyncio.release(False, _exit_handler_id)
 	# disconnect the client.
 	status_log("unloading")
-
 
 
 ## Utils ##
@@ -135,8 +142,12 @@ def safe_listener_detach(txt_listener):
 async def connect_command(server_host, session):
 	global _client
 	status_log("Connecting to {}".format(server_host))
-	await _client.connect(server_host)
-	await join_workspace(session)
+	try:
+		await _client.connect(server_host)
+		await join_workspace(session)
+	except Exception as e:
+		sublime.error_message("Could not connect:\n {}".format(e))
+		return
 
 # Workspace and cursor (attaching, sending and receiving)
 ##############################################################################
@@ -146,10 +157,13 @@ async def join_workspace(session):
 
 	status_log("Joining workspace: {}".format(session))
 	_cursor_controller = await _client.join(session)
-	sublime_asyncio.dispatch(move_cursor(_cursor_controller), store_task("move-cursor"))
+	sublime_asyncio.dispatch(
+		move_cursor(_cursor_controller), 
+		store_task("move-cursor"))
 
 async def move_cursor(cursor_controller):
 	global _regions_colors
+	global _palette
 
 	status_log("spinning up cursor worker...")
 	# TODO: make the matching user/color more solid. now all users have one color cursor.
@@ -161,15 +175,19 @@ async def move_cursor(cursor_controller):
 
 			if buffer:
 				reg = rowcol_to_region(buffer.view, cursor_event.start, cursor_event.end)
-				reg_flags = sublime.RegionFlags.DRAW_EMPTY | sublime.RegionFlags.DRAW_NO_FILL
+				# reg_flags = sublime.RegionFlags.DRAW_EMPTY | sublime.RegionFlags.DRAW_NO_FILL
+				reg_flags = sublime.RegionFlags.DRAW_EMPTY
+
+				user_hash = hash(cursor_event.user)
 
 				buffer.view.add_regions(
 					"codemp_cursors", 
 					[reg], 
 					flags = reg_flags, 
-					scope=_regions_colors[hash(cursor_event.user) % len(_regions_colors)], 
+					scope=_regions_colors[user_hash % len(_regions_colors)], 
 					annotations = [cursor_event.user], 
-					annotation_color="#000")
+					annotation_color=_palette[user_hash % len(_palette)]
+				)
 
 	except asyncio.CancelledError:
 	    status_log("cursor worker stopped...")
@@ -197,6 +215,7 @@ class CodempSublimeBuffer():
 
 	async def attach(self, client):
 		global _txt_change_listener
+		global _buffers
 
 		status_log("attaching local buffer '{}' to '{}'".format(self.view.file_name(), self.remote_name))
 		# attach to the matching codemp buffer
@@ -213,6 +232,7 @@ class CodempSublimeBuffer():
 		# start the buffer worker that waits for text_changes in the worker thread
 		sublime_asyncio.dispatch(self.apply_buffer_change(), store_task(self.worker_task_name))
 		
+		_buffers.append(self)
 		# mark all views associated with the buffer as being connected to codemp
 		for v in self.view.buffer().views():
 			v.set_status("z_codemp_buffer", "[Codemp]")
@@ -252,7 +272,6 @@ class CodempSublimeBuffer():
 			while text_change := await self.controller.recv():
 				# In case a change arrives to a background buffer, just apply it. We are not listening on it.
 				# Otherwise, interrupt the listening to avoid echoing back the change just received.
-				status_log("recieved txt change: ")
 				active = is_active(self.view)
 				if active:
 					safe_listener_detach(_txt_change_listener)
@@ -374,7 +393,6 @@ async def join_buffer_command(view, remote_name):
 	try:
 		buffer = CodempSublimeBuffer(view, remote_name)
 		await buffer.attach(_client)
-		_buffers.append(buffer)
 
 		## we should receive all contents from the server upon joining.
 	except Exception as e:
@@ -426,6 +444,10 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 		global _txt_change_listener
 		print("view {} deactivated".format(self.view.id()))
 		safe_listener_detach(_txt_change_listener)
+
+	def on_close(self):
+		buffer = get_buffer_from_buffer_id(self.view.buffer_id())
+		buffer.detach()
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
@@ -553,6 +575,12 @@ class RemoteNameInputHandler(sublime_plugin.ListInputHandler):
 			ret_list.append(buff.remote_name)
 
 		return ret_list
+
+# Disconnect Command
+#############################################################################
+class CodempDisconnectCommand(sublime_plugin.WindowCommand):
+	def run(self):
+		sublime_asyncio.sync(disconnect_client())
 
 # Proxy Commands ( NOT USED )
 #############################################################################

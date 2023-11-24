@@ -20,9 +20,9 @@
     }
   },
   {
-  	"caption": "Codemp: Connect",
     // # on_window_command, does not trigger when called from the command palette
     // # See: https://github.com/sublimehq/sublime_text/issues/2234 
+  	"caption": "Codemp: Connect",
   	"command": "codemp_connect",
   	"args": {
       // "server_host": "http://[::1]:50051"
@@ -49,6 +49,12 @@
     "command": "codemp_disconnect_buffer",
     "arg": {
       // 'remote_name' : 'name of buffer to disconnect'
+    }
+  },
+  {
+    "caption": "Codemp: Disconnect Client",
+    "command": "codemp_disconnect",
+    "arg": {
     }
   },
 ]
