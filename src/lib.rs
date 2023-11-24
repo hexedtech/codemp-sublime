@@ -5,7 +5,8 @@ use codemp::errors::Error as CodempError;
 
 use pyo3::{
     prelude::*,
-    exceptions::{PyConnectionError, PyRuntimeError, PyBaseException}
+    exceptions::{PyConnectionError, PyRuntimeError, PyBaseException}, 
+    types::PyString,
 };
 
 struct PyCodempError(CodempError);
@@ -243,8 +244,8 @@ impl From::<Arc<CodempBufferController>> for PyBufferController {
 #[pymethods]
 impl PyBufferController {
 
-    fn content(&self) -> PyString {
-        self.0.content()
+    fn content<'a>(&self, py: Python<'a>) -> &'a PyString {
+        PyString::new(py, self.0.content().as_str())
     }
 
     fn send(&self, start: usize, end: usize, txt: String) -> PyResult<()>{
