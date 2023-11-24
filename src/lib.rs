@@ -169,7 +169,10 @@ impl PyClientHandle {
                 .await
                 .map_err(PyCodempError::from)?;
 
-            Ok(cont)
+            Python::with_gil(|py| {
+                let pystr: Py<PyString> = PyString::new(py, cont.as_str()).into();
+                Ok(pystr)
+            })
         })
     }
 }
