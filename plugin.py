@@ -146,7 +146,7 @@ async def connect_command(server_host, session):
 		await _client.connect(server_host)
 		await join_workspace(session)
 	except Exception as e:
-		sublime.error_message("Could not connect:\n {}".format(e))
+		sublime.error_message("Could not connect:\n Make sure the server is up.")
 		return
 
 # Workspace and cursor (attaching, sending and receiving)
@@ -287,96 +287,24 @@ class CodempSublimeBuffer():
 
 				if active:
 					_txt_change_listener.attach(self.view.buffer())
+
 		except asyncio.CancelledError:
 		    status_log("'{}' buffer worker stopped...".format(self.remote_name))
 
 	def send_buffer_change(self, changes):
-		# Sublime text on_text_changed events, gives a list of changes.
-		# in case of simple insertion or deletion this is fine.
+		# Sublime text on_text_changed events, can give a list of changes.
+		# in case of simple insertion or deletion the change is singular.
 		# but if we swap a string (select it and add another string in it's place) or have multiple selections
-		# or do an undo of some kind after the just mentioned events we receive multiple split text changes, 
+		# or do an undo of some kind after the just mentioned events we receive multiple split text changes,
 		# e.g. select the world `hello` and replace it with `12345`: Sublime will separate it into two singular changes,
 		# first add `12345` in front of `hello`: `12345hello` then, delete the `hello`.
-		# The gotcha here is that now we have an issue of indexing inside the buffer. when adding `12345` we shifted the index of the
-		# start of the word `hello` to the right by 5.
-		# By sending these changes one by one generated some buffer length issues in delta, since we have an interdependency of the
-		# changes.
 
-		# if the historic region is empty, we are inserting.
-		# if it isn't we are deleting.
+		# we do not do any index checking, and trust sublime with providing the correct sequential indexing, assuming the
+		# changes are applied in the order they are received.
 		for change in changes:
 			region = sublime.Region(change.a.pt, change.b.pt)
 			status_log("sending txt change: Reg({} {}) -> '{}'".format(region.begin(), region.end(), change.str))
 			self.controller.send(region.begin(), region.end(), change.str)
-
-		# as a workaround, whenever we receive multiple changes we compress all of them into a "single one" that delta understands,
-		# namely, we get a bounding region to the change, and all the text in between.
-		# if len(changes) == 1:
-		# 	region = self.view.transform_region_from(sublime.Region(changes[0].a.pt, changes[0].b.pt), self.old_change_id)
-		# 	txt = changes[0].str
-		# else:
-		# 	start, end = compress_change_region(changes)
-		# 	region = self.view.transform_region_from(sublime.Region(start, end), self.old_change_id)
-		# 	txt = view.substr(region)
-
-		# self.controller.send(region.begin(), region.end(), txt)
-
-def compress_change_region(changes):
-	# the bounding region of all text changes.
-	txt_a = float("inf")
-	txt_b = 0
-
-	# the region in the original buffer subjected to the change.
-	reg_a = float("inf")
-	reg_b = 0
-
-	# we keep track of how much the changes move the indexing of the buffer
-	buffer_shift = 0 # left - + right
-
-	for change in changes:
-		# the change in characters that the change would bring
-		# len(str) and .len_utf8 are mutually exclusive
-		# len(str) is when we insert new text at a position
-		# .len_utf8 is the length of the deleted/canceled string in the buffer
-		change_delta = len(change.str) - change.len_utf8
-
-		# the text region is enlarged to the left
-		txt_a = min(txt_a, change.a.pt)
-
-		# On insertion, change.b.pt == change.a.pt
-		# 	If we meet a new insertion further than the current window
-		# 	we expand to the right by that change.
-		# On deletion, change.a.pt == change.b.pt - change.len_utf8
-		# 	when we delete a selection and it is further than the current window
-		# 	we enlarge to the right up until the begin of the deleted region.
-		if change.b.pt > txt_b:
-			txt_b = change.b.pt + change_delta
-		else:
-			# otherwise we just shift the window according to the change
-			txt_b += change_delta
-
-		# the bounding region enlarged to the left
-		reg_a = min(reg_a, change.a.pt)
-
-		# In this bit, we want to look at the buffer BEFORE the modifications
-		# but we are working on the buffer modified by all previous changes for each loop
-		# we use buffer_shift to keep track of how the buffer shifts around
-		# to map back to the correct index for each change in the unmodified buffer.
-		if change.b.pt + buffer_shift > reg_b:
-			# we only enlarge if we have changes that exceede on the right the current window
-			reg_b = change.b.pt + buffer_shift
-
-		# after using the change delta, we archive it for the next iterations
-		# the minus is just for being able to "add" the buffer shift with a +.
-		# since we encode deleted text as negative in the change_delta, but that requires the shift to the
-		# old position to be positive, and viceversa for text insertion.
-		buffer_shift -= change_delta
-
-		# print("\t[buff change]", change.a.pt, change.str, "(", change.len_utf8,")", change.b.pt)
-
-	# print("[walking txt]", "[", txt_a, txt_b, "]", txt)
-	# print("[walking reg]", "[", reg_a, reg_b, "]")
-	return reg_a, reg_b
 
 
 # we call this command manually to have access to the edit token.
@@ -620,3 +548,62 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
 #
 # 	def input_description(self):
 # 		return 'Server host:'
+
+
+## NOT NEEDED ANYMORE
+# def compress_change_region(changes):
+# 	# the bounding region of all text changes.
+# 	txt_a = float("inf")
+# 	txt_b = 0
+
+# 	# the region in the original buffer subjected to the change.
+# 	reg_a = float("inf")
+# 	reg_b = 0
+
+# 	# we keep track of how much the changes move the indexing of the buffer
+# 	buffer_shift = 0 # left - + right
+
+# 	for change in changes:
+# 		# the change in characters that the change would bring
+# 		# len(str) and .len_utf8 are mutually exclusive
+# 		# len(str) is when we insert new text at a position
+# 		# .len_utf8 is the length of the deleted/canceled string in the buffer
+# 		change_delta = len(change.str) - change.len_utf8
+
+# 		# the text region is enlarged to the left
+# 		txt_a = min(txt_a, change.a.pt)
+
+# 		# On insertion, change.b.pt == change.a.pt
+# 		# 	If we meet a new insertion further than the current window
+# 		# 	we expand to the right by that change.
+# 		# On deletion, change.a.pt == change.b.pt - change.len_utf8
+# 		# 	when we delete a selection and it is further than the current window
+# 		# 	we enlarge to the right up until the begin of the deleted region.
+# 		if change.b.pt > txt_b:
+# 			txt_b = change.b.pt + change_delta
+# 		else:
+# 			# otherwise we just shift the window according to the change
+# 			txt_b += change_delta
+
+# 		# the bounding region enlarged to the left
+# 		reg_a = min(reg_a, change.a.pt)
+
+# 		# In this bit, we want to look at the buffer BEFORE the modifications
+# 		# but we are working on the buffer modified by all previous changes for each loop
+# 		# we use buffer_shift to keep track of how the buffer shifts around
+# 		# to map back to the correct index for each change in the unmodified buffer.
+# 		if change.b.pt + buffer_shift > reg_b:
+# 			# we only enlarge if we have changes that exceede on the right the current window
+# 			reg_b = change.b.pt + buffer_shift
+
+# 		# after using the change delta, we archive it for the next iterations
+# 		# the minus is just for being able to "add" the buffer shift with a +.
+# 		# since we encode deleted text as negative in the change_delta, but that requires the shift to the
+# 		# old position to be positive, and viceversa for text insertion.
+# 		buffer_shift -= change_delta
+
+# 		# print("\t[buff change]", change.a.pt, change.str, "(", change.len_utf8,")", change.b.pt)
+
+# 	# print("[walking txt]", "[", txt_a, txt_b, "]", txt)
+# 	# print("[walking reg]", "[", reg_a, reg_b, "]")
+# 	return reg_a, reg_b

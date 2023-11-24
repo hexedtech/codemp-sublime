@@ -30,7 +30,7 @@ class CodempClient():
 	async def disconnect_buffer(self, path): # -> None
 		await self.handle.disconnect_buffer(path)
 
-	async def select_buffer(): # -> String
+	async def select_buffer(self): # -> String
 		await self.handle.select_buffer()
 
 ## Custom
@@ -60,6 +60,9 @@ class CursorController():
 class BufferController():
 	def __init__(self, handle):
 		self.handle = handle
+
+	def content(self): # -> String
+		return self.content()
 
 	def send(self, start, end, txt): # -> None
 		self.handle.send(start, end, txt)

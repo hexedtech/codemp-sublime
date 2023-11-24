@@ -243,6 +243,10 @@ impl From::<Arc<CodempBufferController>> for PyBufferController {
 #[pymethods]
 impl PyBufferController {
 
+    fn content(&self) -> PyString {
+        self.0.content()
+    }
+
     fn send(&self, start: usize, end: usize, txt: String) -> PyResult<()>{
         let op = CodempTextChange { 
             span: start..end,
