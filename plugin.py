@@ -181,7 +181,7 @@ async def move_cursor(cursor_controller):
 				user_hash = hash(cursor_event.user)
 
 				buffer.view.add_regions(
-					"codemp_cursors", 
+					"codemp-cursors-{}".format(user_hash), 
 					[reg], 
 					flags = reg_flags, 
 					scope=_regions_colors[user_hash % len(_regions_colors)], 
@@ -318,6 +318,8 @@ async def join_buffer_command(view, remote_name):
 	global _client
 	global _buffers
 
+	# print(await _client.select_buffer())
+
 	try:
 		buffer = CodempSublimeBuffer(view, remote_name)
 		await buffer.attach(_client)
@@ -374,8 +376,9 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 		safe_listener_detach(_txt_change_listener)
 
 	def on_close(self):
+		global _client
 		buffer = get_buffer_from_buffer_id(self.view.buffer_id())
-		buffer.detach()
+		sublime_asyncio.dispatch(buffer.detach(_client))
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
