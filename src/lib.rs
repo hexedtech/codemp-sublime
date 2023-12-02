@@ -6,7 +6,7 @@ use codemp::errors::Error as CodempError;
 use pyo3::{
     prelude::*,
     exceptions::{PyConnectionError, PyRuntimeError, PyBaseException}, 
-    types::PyString,
+    types::{PyString, PyType},
 };
 
 struct PyCodempError(CodempError);
@@ -324,21 +324,60 @@ impl From<CodempCursorEvent> for PyCursorEvent {
     }
 }
 
-#[pyclass]
-struct PyTextChange {
-    #[pyo3(get, set)]
-    start_incl: usize,
-    
-    #[pyo3(get, set)]
-    end_excl: usize,
+// TODO: change the python text change to hold a wrapper to the original text change, with helper getter
+// and setters for unpacking the span, instead of a flattened version of text change.
 
-    #[pyo3(get, set)]
-    content: String
-}
+#[pyclass]
+struct PyTextChange(CodempTextChange);
 
 impl From<CodempTextChange> for PyTextChange {
     fn from(value: CodempTextChange) -> Self {
-        PyTextChange { start_incl: value.span.start, end_excl: value.span.end, content: value.content }
+        PyTextChange(value)
+    }
+}
+
+#[pymethods]
+impl PyTextChange {
+
+    #[getter]
+    fn start_incl(&self) -> PyResult<usize> {
+        Ok(self.0.span.start)
+    }
+
+    #[getter]
+    fn end_excl(&self) -> PyResult<usize> {
+        Ok(self.0.span.end)
+    }
+
+    #[getter]
+    fn content(&self) -> PyResult<String> {
+        Ok(self.0.content.clone())
+    }
+
+    fn is_deletion(&self) -> bool {
+        self.0.is_deletion()
+    }
+
+    fn is_addition(&self) -> bool {
+        self.0.is_addition()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn apply(&self, txt: &str) -> String {
+        self.0.apply(txt)
+    }
+
+    #[classmethod]
+    fn from_diff(_cls: &PyType, before: &str, after: &str) -> PyTextChange {
+        PyTextChange(CodempTextChange::from_diff(before, after))
+    }
+
+    #[classmethod]
+    fn index_to_rowcol(_cls: &PyType, txt: &str, index: usize) -> (i32, i32) {
+        CodempTextChange::index_to_rowcol(txt, index).into()
     }
 }
 

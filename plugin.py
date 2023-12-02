@@ -3,6 +3,11 @@ import sublime_plugin
 
 # import Codemp.codemp_client as codemp
 from Codemp.src.codemp_client import *
+
+# we import the PyTextChange type to be able to access its @classmethods: from_diff and index_to_rowcol
+# PyTextChange instances are not meant to be created from python, but only received immutable from codemp.
+from Codemp.bindings.codemp_client import PyTextChange
+
 import Codemp.ext.sublime_asyncio as sublime_asyncio
 import asyncio
 import os
@@ -272,6 +277,10 @@ class CodempSublimeBuffer():
 			while text_change := await self.controller.recv():
 				# In case a change arrives to a background buffer, just apply it. We are not listening on it.
 				# Otherwise, interrupt the listening to avoid echoing back the change just received.
+				if text_change.is_empty():
+					status_log("change is empty. skipping.")
+					continue
+
 				active = is_active(self.view)
 				if active:
 					safe_listener_detach(_txt_change_listener)
