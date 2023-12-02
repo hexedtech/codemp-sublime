@@ -384,10 +384,11 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 		print("view {} deactivated".format(self.view.id()))
 		safe_listener_detach(_txt_change_listener)
 
-	def on_close(self):
+	def on_pre_close(self):
 		global _client
 		buffer = get_buffer_from_buffer_id(self.view.buffer_id())
-		sublime_asyncio.dispatch(buffer.detach(_client))
+		# have to run the detach logic in sync, to keep a valid reference to the view.
+		sublime_asyncio.sync(buffer.detach(_client))
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
