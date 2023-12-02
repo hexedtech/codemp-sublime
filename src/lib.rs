@@ -161,20 +161,22 @@ impl PyClientHandle {
         })
     }
 
-    fn select_buffer<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let rc = self.0.clone();
+    // TODO: SELECT_BUFFER IS NO LONGER A CLIENT FUNCTION.
+    //       low prio, add it back eventually.
+    // fn select_buffer<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
+    //     let rc = self.0.clone();
 
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let cont = rc.select_buffer()
-                .await
-                .map_err(PyCodempError::from)?;
+    //     pyo3_asyncio::tokio::future_into_py(py, async move {
+    //         let cont = rc.select_buffer()
+    //             .await
+    //             .map_err(PyCodempError::from)?;
 
-            Python::with_gil(|py| {
-                let pystr: Py<PyString> = PyString::new(py, cont.as_str()).into();
-                Ok(pystr)
-            })
-        })
-    }
+    //         Python::with_gil(|py| {
+    //             let pystr: Py<PyString> = PyString::new(py, cont.as_str()).into();
+    //             Ok(pystr)
+    //         })
+    //     })
+    // }
 }
 
 
