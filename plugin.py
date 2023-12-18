@@ -178,21 +178,23 @@ async def move_cursor(cursor_controller):
 		while cursor_event := await cursor_controller.recv():
 			buffer = get_buffer_from_remote_name(cursor_event.buffer)
 
-			if buffer:
-				reg = rowcol_to_region(buffer.view, cursor_event.start, cursor_event.end)
-				# reg_flags = sublime.RegionFlags.DRAW_EMPTY | sublime.RegionFlags.DRAW_NO_FILL
-				reg_flags = sublime.RegionFlags.DRAW_EMPTY
+			if not buffer:
+				status_log("Received a cursor event for an unknown buffer: {}".format(cursor_event.buffer))
+				continue
 
-				user_hash = hash(cursor_event.user)
+			reg = rowcol_to_region(buffer.view, cursor_event.start, cursor_event.end)
+			reg_flags = sublime.RegionFlags.DRAW_EMPTY # show cursors.
 
-				buffer.view.add_regions(
-					"codemp-cursors-{}".format(user_hash), 
-					[reg], 
-					flags = reg_flags, 
-					scope=_regions_colors[user_hash % len(_regions_colors)], 
-					annotations = [cursor_event.user], 
-					annotation_color=_palette[user_hash % len(_palette)]
-				)
+			user_hash = hash(cursor_event.user)
+
+			buffer.view.add_regions(
+				"codemp-cursors-{}".format(user_hash), 
+				[reg], 
+				flags = reg_flags, 
+				scope=_regions_colors[user_hash % len(_regions_colors)], 
+				annotations = [cursor_event.user], 
+				annotation_color=_palette[user_hash % len(_palette)]
+			)
 
 	except asyncio.CancelledError:
 	    status_log("cursor worker stopped...")
@@ -326,8 +328,6 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 async def join_buffer_command(view, remote_name):
 	global _client
 	global _buffers
-
-	# print(await _client.select_buffer())
 
 	try:
 		buffer = CodempSublimeBuffer(view, remote_name)

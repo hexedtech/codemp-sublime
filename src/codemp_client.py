@@ -1,6 +1,8 @@
 import asyncio
 import Codemp.bindings.codemp_client as libcodemp
 
+# These are helper wrappers, not very interesting
+
 class CodempClient():
 
 	def __init__(self):
@@ -33,19 +35,12 @@ class CodempClient():
 	async def select_buffer(self): # -> String
 		await self.handle.select_buffer()
 
-## Custom
-	async def disconnect(self): # -> None
-		# disconnect all buffers and workspaces first, maybe?
-		await self.leave_workspace()
-		# drop the handle, it will require a new instantiation
-		self.handle = None 
-
 class CursorController():
 	def __init__(self, handle):
 		self.handle = handle
 
-	def send(self, path, start, end): # -> None
-		self.handle.send(path, start, end)
+	def send(self, buffer_id, start, end): # -> None
+		self.handle.send(buffer_id, start, end)
 
 	def try_recv(self): # -> Optional[CursorEvent]
 		return self.handle.try_recv()
