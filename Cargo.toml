@@ -9,9 +9,10 @@ name = "codemp_client"
 crate-type = ["cdylib"]
 
 [dependencies]
-codemp = { git = "ssh://git@github.com/codewithotherpeopleandchangenamelater/codemp.git", tag="v0.5.1"}
+codemp = { git = "ssh://git@github.com/codewithotherpeopleandchangenamelater/codemp.git", tag="v0.6.0", features = ["client", "woot"]}
 pyo3 = { version = "0.20", features = ["extension-module"] }
 pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
+serde = { version = "1.0.196", features = ["derive"] }
 tokio = "1.29.1"
 
 [build-dependencies]

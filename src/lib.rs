@@ -1,16 +1,20 @@
-use std::{sync::Arc, format};
+use codemp::proto::common::Identity;
+use pyo3::types::PyList;
+use std::{format, ops::Deref, sync::Arc};
+use tokio::sync::RwLock;
 
 use codemp::prelude::*;
-use codemp::errors::Error as CodempError;
+use codemp::{errors::Error as CodempError, proto::files::BufferNode};
 
 use pyo3::{
+    exceptions::{PyBaseException, PyConnectionError, PyRuntimeError},
     prelude::*,
-    exceptions::{PyConnectionError, PyRuntimeError, PyBaseException}, 
     types::{PyString, PyType},
 };
 
+// ERRORS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 struct PyCodempError(CodempError);
-impl From::<CodempError> for PyCodempError {
+impl From<CodempError> for PyCodempError {
     fn from(err: CodempError) -> Self {
         PyCodempError(err)
     }
@@ -24,70 +28,163 @@ impl From<PyCodempError> for PyErr {
             }
             CodempError::Channel { send } => {
                 PyConnectionError::new_err(format!("Channel error (send:{})", send))
-            },
+            }
             CodempError::InvalidState { msg } => {
                 PyRuntimeError::new_err(format!("Invalid state: {}", msg))
-            },
-            CodempError::Deadlocked => {
-                PyRuntimeError::new_err(format!("Deadlock, retry."))
-            },
+            }
+            CodempError::Deadlocked => PyRuntimeError::new_err(format!("Deadlock, retry.")),
             CodempError::Filler { message } => {
                 PyBaseException::new_err(format!("Generic error: {}", message))
             }
         }
     }
 }
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// Workflow:
+// We first spin up an empty handler, that can connect to a server, and create a client.
+// We then use the client, to login into a workspace, and join it, obtaining a workspace object
+// We will then use that workspace object to interact with the buffers in that workspace.
+// In steps:
+//  1. Get Object that can initiate a connection
+//  2. Connect to a server
+//  3. Login to a workspace
+//  4. Join a workspace/get an already joined workspace
+//  5. Create a new buffer/attach to an existing one
 
 #[pyfunction]
-fn codemp_init<'a>(py: Python<'a>) -> PyResult<Py<PyClientHandle>> {
-    let py_instance: PyClientHandle = CodempInstance::default().into();
-    Ok(Py::new(py, py_instance)?)
+fn codemp_init<'a>(py: Python<'a>) -> PyResult<Py<PyClient>> {
+    Ok(Py::new(py, PyClient::default())?)
 }
 
 #[pyclass]
-struct PyClientHandle(Arc<CodempInstance>);
+struct PyClient(Arc<RwLock<Option<CodempClient>>>);
 
-impl From::<CodempInstance> for PyClientHandle {
-    fn from(value: CodempInstance) -> Self {
-        PyClientHandle(Arc::new(value))
+impl Default for PyClient {
+    fn default() -> Self {
+        PyClient(Arc::new(RwLock::new(None)))
+    }
+}
+
+impl From<CodempClient> for PyClient {
+    fn from(value: CodempClient) -> Self {
+        PyClient(RwLock::new(Some(value)).into())
     }
 }
 
 #[pymethods]
-impl PyClientHandle {
-
-    fn connect<'a>(&'a self, py: Python<'a>, addr: String) ->PyResult<&'a PyAny> {
-        let rc = self.0.clone();
+impl PyClient {
+    fn connect<'a>(&'a self, py: Python<'a>, dest: String) -> PyResult<&'a PyAny> {
+        let cli = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            rc.connect(addr.as_str())
+            let client: CodempClient = CodempClient::new(dest.as_str())
                 .await
                 .map_err(PyCodempError::from)?;
+
+            let _ = cli.write().await.insert(client);
+
             Ok(())
         })
     }
 
-    // join a workspace
-    fn join<'a>(&'a self, py: Python<'a>, session: String) -> PyResult<&'a PyAny> {
+    fn login<'a>(
+        &'a self,
+        py: Python<'a>,
+        user: String,
+        password: String,
+        workspace_id: Option<String>,
+    ) -> PyResult<&'a PyAny> {
+        let rc = self.0.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let cli = rc.read().await;
+            if cli.is_none() {
+                return Err(PyConnectionError::new_err("Connect to a server first."));
+            };
+
+            cli.as_ref()
+                .unwrap()
+                .login(user, password, workspace_id)
+                .await
+                .map_err(PyCodempError::from)?;
+
+            Ok(())
+        })
+    }
+
+    fn join_workspace<'a>(&'a self, py: Python<'a>, workspace: String) -> PyResult<&'a PyAny> {
         let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let curctrl: PyCursorController = rc.join(session.as_str())
+            let mut cli = rc.write().await;
+            if cli.is_none() {
+                return Err(PyConnectionError::new_err("Connect to a server first."));
+            };
+
+            let workspace: PyWorkspace = cli
+                .as_mut()
+                .unwrap()
+                .join_workspace(workspace.as_str())
                 .await
                 .map_err(PyCodempError::from)?
                 .into();
 
-            Python::with_gil(|py| {
-                Ok(Py::new(py, curctrl)?)
-            })
+            Python::with_gil(|py| Ok(Py::new(py, workspace)?))
         })
     }
 
-    fn create<'a>(&'a self, py: Python<'a>, path: String, content: Option<String>) -> PyResult<&'a PyAny> {
+    // join a workspace
+    fn get_workspace<'a>(&'a self, py: Python<'a>, id: String) -> PyResult<&'a PyAny> {
         let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            rc.create(path.as_str(), content.as_deref())
+            let cli = rc.read().await;
+            if cli.is_none() {
+                return Err(PyConnectionError::new_err("Connect to a server first."));
+            };
+
+            let Some(ws) = cli.as_ref().unwrap().get_workspace(id.as_str()) else {
+                return Ok(None)
+            };
+
+            Python::with_gil(|py| Ok(Some(Py::new(py, PyWorkspace(ws))?)))
+        })
+    }
+
+    fn user_id<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
+        let rc = self.0.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let cli = rc.read().await;
+            if cli.is_none() {
+                return Err(PyConnectionError::new_err("Connect to a server first."));
+            };
+            let id = cli.as_ref().unwrap().user_id().to_string();
+
+            Python::with_gil(|py| {
+                let id: Py<PyString> = PyString::new(py, id.as_str()).into_py(py);
+                Ok(id)
+            })
+        })
+    }
+}
+
+#[pyclass]
+struct PyWorkspace(Arc<CodempWorkspace>);
+
+impl From<Arc<CodempWorkspace>> for PyWorkspace {
+    fn from(value: Arc<CodempWorkspace>) -> Self {
+        PyWorkspace(value)
+    }
+}
+
+#[pymethods]
+impl PyWorkspace {
+    // join a workspace
+    fn create<'a>(&'a self, py: Python<'a>, path: String) -> PyResult<&'a PyAny> {
+        let ws = self.0.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            ws.create(path.as_str())
                 .await
                 .map_err(PyCodempError::from)?;
             Ok(())
@@ -95,97 +192,94 @@ impl PyClientHandle {
     }
 
     fn attach<'a>(&'a self, py: Python<'a>, path: String) -> PyResult<&'a PyAny> {
-        let rc = self.0.clone();
+        let ws = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let buffctrl: PyBufferController = rc.attach(path.as_str())
+            let buffctl: PyBufferController = ws
+                .attach(path.as_str())
                 .await
                 .map_err(PyCodempError::from)?
                 .into();
-
-            Python::with_gil(|py| {
-                Ok(Py::new(py, buffctrl)?)
-            })
+            Python::with_gil(|py| Ok(Py::new(py, buffctl)?))
         })
     }
-    
-    fn get_cursor<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let rc = self.0.clone();
+
+    fn fetch_buffers<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
+        let ws = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let curctrl: PyCursorController = rc.get_cursor()
+            ws.fetch_buffers().await.map_err(PyCodempError::from)?;
+            Ok(())
+        })
+    }
+
+    fn fetch_users<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
+        let ws = self.0.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            ws.fetch_users().await.map_err(PyCodempError::from)?;
+            Ok(())
+        })
+    }
+
+    fn list_buffer_users<'a>(&'a self, py: Python<'a>, path: String) -> PyResult<&'a PyAny> {
+        let ws = self.0.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let usrlist: Vec<PyId> = ws
+                .list_buffer_users(path.as_str())
                 .await
                 .map_err(PyCodempError::from)?
-                .into();
+                .into_iter()
+                .map(PyId::from)
+                .collect();
 
-            Python::with_gil(|py| {
-                Ok(Py::new(py, curctrl)?)
-            })
+            Ok(usrlist)
         })
     }
 
-    fn get_buffer<'a>(&'a self, py: Python<'a>, path: String) -> PyResult<&'a PyAny> {
-        let rc = self.0.clone();
+    fn delete<'a>(&'a self, py: Python<'a>, path: String) -> PyResult<&'a PyAny> {
+        let ws = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let buffctrl: PyBufferController = rc.get_buffer(path.as_str())
-                .await
-                .map_err(PyCodempError::from)?
-                .into();
-
-            Python::with_gil(|py| {
-                Ok(Py::new(py, buffctrl)?)
-            })
-        })
-    }
-
-    fn leave_workspace<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let rc = self.0.clone();
-
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            rc.leave_workspace()
+            ws.delete(path.as_str())
                 .await
                 .map_err(PyCodempError::from)?;
             Ok(())
         })
     }
 
-    fn disconnect_buffer<'a>(&'a self, py: Python<'a>, path: String) -> PyResult<&'a PyAny> {
-        let rc = self.0.clone();
-
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            rc.disconnect_buffer(path.as_str())
-                .await
-                .map_err(PyCodempError::from)?;
-            Ok(())
-        })
+    fn id(&self, py: Python<'_>) -> Py<PyString> {
+        PyString::new(py, self.0.id().as_str()).into()
     }
 
-    // TODO: SELECT_BUFFER IS NO LONGER A CLIENT FUNCTION.
-    //       low prio, add it back eventually.
-    // fn select_buffer<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
-    //     let rc = self.0.clone();
+    fn cursor(&self, py: Python<'_>) -> PyResult<Py<PyCursorController>> {
+        Ok(Py::new(py, PyCursorController::from(self.0.cursor()))?)
+    }
 
-    //     pyo3_asyncio::tokio::future_into_py(py, async move {
-    //         let cont = rc.select_buffer()
-    //             .await
-    //             .map_err(PyCodempError::from)?;
+    fn buffer_by_name(
+        &self,
+        py: Python<'_>,
+        path: String,
+    ) -> PyResult<Option<Py<PyBufferController>>> {
+        let Some(bufctl) = self.0.buffer_by_name(path.as_str()) else {
+            return Ok(None)
+        };
 
-    //         Python::with_gil(|py| {
-    //             let pystr: Py<PyString> = PyString::new(py, cont.as_str()).into();
-    //             Ok(pystr)
-    //         })
-    //     })
-    // }
+        Ok(Some(Py::new(py, PyBufferController::from(bufctl))?))
+    }
+
+    fn filetree(&self, py: Python<'_>) -> Py<PyList> {
+        PyList::new(py, self.0.filetree()).into_py(py)
+    }
 }
-
 
 /* ########################################################################### */
 
 #[pyclass]
 struct PyCursorController(Arc<CodempCursorController>);
 
-impl From::<Arc<CodempCursorController>> for PyCursorController {
+impl From<Arc<CodempCursorController>> for PyCursorController {
     fn from(value: Arc<CodempCursorController>) -> Self {
         PyCursorController(value)
     }
@@ -193,12 +287,11 @@ impl From::<Arc<CodempCursorController>> for PyCursorController {
 
 #[pymethods]
 impl PyCursorController {
-
     fn send<'a>(&'a self, path: String, start: (i32, i32), end: (i32, i32)) -> PyResult<()> {
         let pos = CodempCursorPosition {
-            buffer: path,
-            start: Some(start.into()),
-            end: Some(end.into())
+            buffer: BufferNode { path },
+            start: start.into(),
+            end: end.into(),
         };
 
         Ok(self.0.send(pos).map_err(PyCodempError::from)?)
@@ -209,8 +302,8 @@ impl PyCursorController {
             Some(cur_event) => {
                 let evt = PyCursorEvent::from(cur_event);
                 Ok(evt.into_py(py))
-            },
-            None => Ok(py.None())
+            }
+            None => Ok(py.None()),
         }
     }
 
@@ -218,13 +311,8 @@ impl PyCursorController {
         let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let cur_event: PyCursorEvent = rc.recv()
-                .await
-                .map_err(PyCodempError::from)?
-                .into();
-            Python::with_gil(|py| {
-                Ok(Py::new(py, cur_event)?)
-            })
+            let cur_event: PyCursorEvent = rc.recv().await.map_err(PyCodempError::from)?.into();
+            Python::with_gil(|py| Ok(Py::new(py, cur_event)?))
         })
     }
 
@@ -240,23 +328,22 @@ impl PyCursorController {
 #[pyclass]
 struct PyBufferController(Arc<CodempBufferController>);
 
-impl From::<Arc<CodempBufferController>> for PyBufferController {
-    fn from(value: Arc<CodempBufferController>) -> Self { 
+impl From<Arc<CodempBufferController>> for PyBufferController {
+    fn from(value: Arc<CodempBufferController>) -> Self {
         PyBufferController(value)
     }
 }
 
 #[pymethods]
 impl PyBufferController {
-
     fn content<'a>(&self, py: Python<'a>) -> &'a PyString {
         PyString::new(py, self.0.content().as_str())
     }
 
-    fn send(&self, start: usize, end: usize, txt: String) -> PyResult<()>{
-        let op = CodempTextChange { 
+    fn send(&self, start: usize, end: usize, txt: String) -> PyResult<()> {
+        let op = CodempTextChange {
             span: start..end,
-            content: txt.into() 
+            content: txt.into(),
         };
         Ok(self.0.send(op).map_err(PyCodempError::from)?)
     }
@@ -266,8 +353,8 @@ impl PyBufferController {
             Some(txt_change) => {
                 let evt = PyTextChange::from(txt_change);
                 Ok(evt.into_py(py))
-            },
-            None => Ok(py.None())
+            }
+            None => Ok(py.None()),
         }
     }
 
@@ -275,13 +362,8 @@ impl PyBufferController {
         let rc = self.0.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let txt_change: PyTextChange = rc.recv()
-                .await
-                .map_err(PyCodempError::from)?
-                .into();
-            Python::with_gil(|py| {
-                Ok(Py::new(py, txt_change)?)
-            })
+            let txt_change: PyTextChange = rc.recv().await.map_err(PyCodempError::from)?.into();
+            Python::with_gil(|py| Ok(Py::new(py, txt_change)?))
         })
     }
 
@@ -299,35 +381,44 @@ impl PyBufferController {
 // Just to be sent to the python heap.
 
 #[pyclass]
+struct PyId {
+    #[pyo3(get, set)]
+    id: String,
+}
+
+impl From<Identity> for PyId {
+    fn from(value: Identity) -> Self {
+        PyId { id: value.id }
+    }
+}
+
+#[pyclass]
 struct PyCursorEvent {
     #[pyo3(get, set)]
     user: String,
-    
+
     #[pyo3(get, set)]
     buffer: String,
-    
+
     #[pyo3(get, set)]
     start: (i32, i32),
 
     #[pyo3(get, set)]
-    end: (i32, i32)
+    end: (i32, i32),
 }
 
 impl From<CodempCursorEvent> for PyCursorEvent {
     fn from(value: CodempCursorEvent) -> Self {
         // todo, handle this optional better?
-        let pos = value.position.unwrap_or_default();
+        let pos = value.position;
         PyCursorEvent {
-            user: value.user,
-            buffer: pos.buffer,
-            start: pos.start.unwrap_or_default().into(),
-            end: pos.end.unwrap_or_default().into()
+            user: value.user.id,
+            buffer: pos.buffer.path,
+            start: pos.start.into(),
+            end: pos.end.into(),
         }
     }
 }
-
-// TODO: change the python text change to hold a wrapper to the original text change, with helper getter
-// and setters for unpacking the span, instead of a flattened version of text change.
 
 #[pyclass]
 struct PyTextChange(CodempTextChange);
@@ -340,7 +431,6 @@ impl From<CodempTextChange> for PyTextChange {
 
 #[pymethods]
 impl PyTextChange {
-
     #[getter]
     fn start_incl(&self) -> PyResult<usize> {
         Ok(self.0.span.start)
@@ -387,14 +477,14 @@ impl PyTextChange {
 #[pymodule]
 fn codemp_client(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(codemp_init, m)?)?;
-    m.add_class::<PyClientHandle>()?;
+    m.add_class::<PyClient>()?;
+    m.add_class::<PyWorkspace>()?;
     m.add_class::<PyCursorController>()?;
     m.add_class::<PyBufferController>()?;
 
+    m.add_class::<PyId>()?;
     m.add_class::<PyCursorEvent>()?;
     m.add_class::<PyTextChange>()?;
 
     Ok(())
 }
-
-
