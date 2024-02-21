@@ -38,8 +38,15 @@
   	}
   },
   {
-    "caption": "Codemp: Join",
+    "caption": "Codemp: Join Workspace",
     "command": "codemp_join",
+    "arg": {
+      // 'server_buffer' : 'test'
+    },
+  },
+  {
+    "caption": "Codemp: Join buffer",
+    "command": "codemp_attach",
     "arg": {
       // 'server_buffer' : 'test'
     },
