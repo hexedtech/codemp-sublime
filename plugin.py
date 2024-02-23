@@ -84,15 +84,17 @@ class EventListener(sublime_plugin.EventListener):
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
     @classmethod
     def is_applicable(cls, settings):
-        return settings.get(g.CODEMP_BUFFER_VIEW_TAG, False)
+        return settings.get(g.CODEMP_BUFFER_TAG, False)
 
     @classmethod
     def applies_to_primary_view_only(cls):
         return False
 
     def on_selection_modified_async(self):
+        s = self.view.settings()
+
         global CLIENT
-        vbuff = CLIENT.active_workspace.get_by_local(self.view.buffer_id())
+        vbuff = CLIENT[s[g.CODEMP_WORKSPACE_ID]].get_by_local(self.view.buffer_id())
         if vbuff is not None:
             CLIENT.send_cursor(vbuff)
 
@@ -101,21 +103,26 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
     # When we defocus, we detach it.
     def on_activated(self):
         global TEXT_LISTENER
+
+        g.ACTIVE_CODEMP_VIEW = self.view.id()
         print("view {} activated".format(self.view.id()))
         TEXT_LISTENER.attach(self.view.buffer())
 
     def on_deactivated(self):
         global TEXT_LISTENER
+
+        g.ACTIVE_CODEMP_VIEW = None
         print("view {} deactivated".format(self.view.id()))
         safe_listener_detach(TEXT_LISTENER)
 
     def on_pre_close(self):
         global TEXT_LISTENER
-        if is_active(self.view):
+        if self.view.id() == g.ACTIVE_CODEMP_VIEW:
             safe_listener_detach(TEXT_LISTENER)
 
         global CLIENT
-        vbuff = CLIENT.active_workspace.get_by_local(self.view.buffer_id())
+        wsid = self.view.settings().get(g.CODEMP_WORKSPACE_ID)
+        vbuff = CLIENT[wsid].get_by_local(self.view.buffer_id())
         vbuff.cleanup()
 
         CLIENT.tm.stop_and_pop(f"{g.BUFFCTL_TASK_PREFIX}-{vbuff.codemp_id}")
@@ -132,17 +139,14 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 
     # blocking :D
     def on_text_changed(self, changes):
-        if (
-            self.buffer.primary_view()
-            .settings()
-            .get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, None)
-        ):
+        s = self.buffer.primary_view().settings()
+        if s.get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, None):
             status_log("ignoring echoing back the change.")
-            self.view.settings()[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
+            s[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
             return
 
         global CLIENT
-        vbuff = CLIENT.active_workspace.get_by_local(self.buffer.id())
+        vbuff = CLIENT[s[g.CODEMP_WORKSPACE_ID]].get_by_local(self.buffer.id())
         CLIENT.send_buffer_change(changes, vbuff)
 
 
@@ -250,7 +254,6 @@ class ListBufferIdInputHandler(sublime_plugin.ListInputHandler):
 class CodempReplaceTextCommand(sublime_plugin.TextCommand):
     def run(self, edit, start, end, content, change_id):
         # we modify the region to account for any change that happened in the mean time
-        print("running the replace command, launche manually.")
         region = self.view.transform_region_from(sublime.Region(start, end), change_id)
         self.view.replace(edit, region, content)
 
