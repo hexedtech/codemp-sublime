@@ -7,6 +7,7 @@ import asyncio  # noqa: F401
 import typing  # noqa: F401
 import tempfile
 import os
+import shutil
 
 
 import Codemp.src.globals as g
@@ -42,13 +43,19 @@ class VirtualBuffer:
         self.view.set_scratch(True)
 
         # mark the view as a codemp view
+        s = self.view.settings()
         self.view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
-        self.view.settings()[g.CODEMP_BUFFER_VIEW_TAG] = True
+        s[g.CODEMP_BUFFER_TAG] = True
+        s[g.CODEMP_REMOTE_ID] = self.codemp_id
+        s[g.CODEMP_WORKSPACE_ID] = self.workspace.id
 
     def cleanup(self):
         os.remove(self.tmpfile)
         # cleanup views
-        del self.view.settings()[g.CODEMP_BUFFER_VIEW_TAG]
+        s = self.view.settings()
+        del s[g.CODEMP_BUFFER_TAG]
+        del s[g.CODEMP_REMOTE_ID]
+        del s[g.CODEMP_WORKSPACE_ID]
         self.view.erase_status(g.SUBLIME_STATUS_ID)
         # this does nothing for now. figure out a way later
         # self.view.erase_regions(g.SUBLIME_REGIONS_PREFIX)
@@ -65,7 +72,7 @@ class VirtualWorkspace:
         self.handle = handle
         self.curctl = handle.cursor()
 
-        # mapping local buffer ids -> remote ids
+        # mapping remote ids -> local ids
         self.id_map: dict[str, str] = {}
         self.active_buffers: dict[str, VirtualBuffer] = {}
 
@@ -85,8 +92,8 @@ class VirtualWorkspace:
         self.sublime_window.set_project_data(proj_data)
 
     def add_buffer(self, remote_id: str, vbuff: VirtualBuffer):
-        self.id_map[vbuff.view.buffer_id()] = remote_id
-        self.active_buffers[remote_id] = vbuff
+        self.id_map[remote_id] = vbuff.view.buffer_id()
+        self.active_buffers[vbuff.view.buffer_id()] = vbuff
 
     def cleanup(self):
         # the worskpace only cares about closing the various open views on its buffers.
@@ -104,13 +111,13 @@ class VirtualWorkspace:
         d["folders"] = newf
         self.sublime_window.set_project_data(d)
         status_log(f"cleaning up virtual workspace '{self.id}'")
-        os.removedirs(self.rootdir)
+        shutil.rmtree(self.rootdir, ignore_errors=True)
 
     def get_by_local(self, local_id: str) -> Optional[VirtualBuffer]:
-        return self.active_buffers.get(self.id_map.get(local_id))
+        return self.active_buffers.get(local_id)
 
     def get_by_remote(self, remote_id: str) -> Optional[VirtualBuffer]:
-        return self.active_buffers.get(remote_id)
+        return self.active_buffers.get(self.id_map.get(remote_id))
 
     async def attach(self, id: str):
         if id is None:
@@ -149,6 +156,9 @@ class VirtualClient:
         self.active_workspace: VirtualWorkspace = None
         self.tm = TaskManager(on_exit)
 
+    def __getitem__(self, key: str):
+        return self.workspaces.get(key)
+
     def make_active(self, ws: VirtualWorkspace):
         # TODO: Logic to deal with swapping to and from workspaces,
         # what happens to the cursor tasks etc..
@@ -156,6 +166,12 @@ class VirtualClient:
             self.tm.stop_and_pop(f"{g.CURCTL_TASK_PREFIX}-{self.active_workspace.id}")
         self.active_workspace = ws
         self.spawn_cursor_manager(ws)
+
+    def get_by_local(self, id):
+        for vws in self.workspaces.values():
+            vbuff = vws.get_by_local(id)
+            if vbuff is not None:
+                return
 
     async def connect(self, server_host: str):
         status_log(f"Connecting to {server_host}")
@@ -248,7 +264,10 @@ class VirtualClient:
                     # In case a change arrives to a background buffer, just apply it.
                     # We are not listening on it. Otherwise, interrupt the listening
                     # to avoid echoing back the change just received.
-                    if is_active(vb.view):
+                    if vb.view.id() == g.ACTIVE_CODEMP_VIEW:
+                        status_log(
+                            "received a text change with view active, stopping the echo."
+                        )
                         vb.view.settings()[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = True
 
                     # we need to go through a sublime text command, since the method,

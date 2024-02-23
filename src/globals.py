@@ -1,10 +1,14 @@
 BUFFCTL_TASK_PREFIX = "buffer-ctl"
 CURCTL_TASK_PREFIX = "cursor-ctl"
+CODEMP_BUFFER_TAG = "codemp-buffer"
+CODEMP_REMOTE_ID = "codemp-buffer-id"
+CODEMP_WORKSPACE_ID = "codemp-workspace-id"
+
 WORKSPACE_FOLDER_PREFIX = "CODEMP::"
 SUBLIME_REGIONS_PREFIX = "codemp-cursors"
-CODEMP_BUFFER_VIEW_TAG = "codemp-buffer"
 SUBLIME_STATUS_ID = "z_codemp_buffer"
 CODEMP_IGNORE_NEXT_TEXT_CHANGE = "codemp-skip-change-event"
+ACTIVE_CODEMP_VIEW = None
 
 PALETTE = [
     "var(--redish)",
