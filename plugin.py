@@ -1,75 +1,47 @@
 import sublime
 import sublime_plugin
 
-# import Codemp.codemp_client as codemp
-from Codemp.src.codemp_client import (
-    VirtualClient,
-    status_log,
-    safe_listener_detach,
-    is_active,
-)xs
+from Codemp.src.codemp_client import VirtualClient
+from Codemp.src.TaskManager import rt
+from Codemp.src.utils import status_log, is_active, safe_listener_detach
+import Codemp.src.globals as g
 
-# UGLYYYY, find a way to not have global variables laying around.
-_client = None
-_txt_change_listener = None
-
-_palette = [
-    "var(--redish)",
-    "var(--orangish)",
-    "var(--yellowish)",
-    "var(--greenish)",
-    "var(--cyanish)",
-    "var(--bluish)",
-    "var(--purplish)",
-    "var(--pinkish)",
-]
-
-_regions_colors = [
-    "region.redish",
-    "region.orangeish",
-    "region.yellowish",
-    "region.greenish",
-    "region.cyanish",
-    "region.bluish",
-    "region.purplish",
-    "region.pinkish",
-]
+CLIENT = None
+TEXT_LISTENER = None
 
 
 # Initialisation and Deinitialisation
 ##############################################################################
-
-
 def plugin_loaded():
-    global _client
-    global _txt_change_listener
+    global CLIENT
+    global TEXT_LISTENER
 
     # instantiate and start a global asyncio event loop.
     # pass in the exit_handler coroutine that will be called upon relasing the event loop.
-    _client = VirtualClient(disconnect_client)
-    _txt_change_listener = CodempClientTextChangeListener()
+    CLIENT = VirtualClient(disconnect_client)
+    TEXT_LISTENER = CodempClientTextChangeListener()
 
     status_log("plugin loaded")
 
 
 async def disconnect_client():
-    global _client
-    global _txt_change_listener
+    global CLIENT
+    global TEXT_LISTENER
 
-    safe_listener_detach(_txt_change_listener)
-    _client.tm.stop_all()
+    safe_listener_detach(TEXT_LISTENER)
+    CLIENT.tm.stop_all()
 
-    for vws in _client.workspaces:
+    for vws in CLIENT.workspaces.values():
         vws.cleanup()
 
-    # fime: allow riconnections
-    _client = None
+    # fix me: allow riconnections
+    CLIENT = None
 
 
 def plugin_unloaded():
-    global _client
+    global CLIENT
     # releasing the runtime, runs the disconnect callback defined when acquiring the event loop.
-    _client.tm.release(False)
+    CLIENT.tm.release(False)
     status_log("plugin unloaded")
 
 
@@ -101,80 +73,52 @@ def get_view_from_local_path(path):
                 return view
 
 
-def cleanup_tags(view):
-    del view.settings()["codemp_buffer"]
-    view.erase_status("z_codemp_buffer")
-    view.erase_regions("codemp_cursors")
-
-
-def tag(view):
-    view.set_status("z_codemp_buffer", "[Codemp]")
-    view.settings()["codemp_buffer"] = True
-
-# The main workflow:
-# Plugin loads and initialises an empty handle to the client
-# The plugin calls connect and populates the handle with a client instance
-# We use the client to authenticate and login (to a workspace) to obtain a token
-# We join a workspace (either new or existing)
-
-
 # Listeners
 ##############################################################################
+class EventListener(sublime_plugin.EventListener):
+    def on_exit(self) -> None:
+        global CLIENT
+        CLIENT.tm.release(True)
 
 
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
     @classmethod
     def is_applicable(cls, settings):
-        return settings.get("codemp_buffer", False)
+        return settings.get(g.CODEMP_BUFFER_VIEW_TAG, False)
 
     @classmethod
     def applies_to_primary_view_only(cls):
         return False
 
     def on_selection_modified_async(self):
-        global _client
-        vbuff = _client.active_workspace.get_virtual_by_local(self.view.buffer_id())
+        global CLIENT
+        vbuff = CLIENT.active_workspace.get_by_local(self.view.buffer_id())
         if vbuff is not None:
-            _client.send_cursor(vbuff)
+            CLIENT.send_cursor(vbuff)
 
     # We only edit on one view at a time, therefore we only need one TextChangeListener
     # Each time we focus a view to write on it, we first attach the listener to that buffer.
     # When we defocus, we detach it.
     def on_activated(self):
-        global _txt_change_listener
+        global TEXT_LISTENER
         print("view {} activated".format(self.view.id()))
-        _txt_change_listener.attach(self.view.buffer())
+        TEXT_LISTENER.attach(self.view.buffer())
 
     def on_deactivated(self):
-        global _txt_change_listener
+        global TEXT_LISTENER
         print("view {} deactivated".format(self.view.id()))
-        safe_listener_detach(_txt_change_listener)
-
-    def on_text_command(self, command_name, args):
-        print(self.view.id(), command_name, args)
-        if command_name == "codemp_replace_text":
-            print("dry_run: detach text listener")
-
-    def on_post_text_command(self, command_name, args):
-        print(command_name, args)
-        if command_name == "codemp_replace_text":
-            print("dry_run: attach text listener")
-
-    # UPDATE ME
+        safe_listener_detach(TEXT_LISTENER)
 
     def on_pre_close(self):
-        global _client
-        global _txt_change_listener
+        global TEXT_LISTENER
         if is_active(self.view):
-            safe_listener_detach(_txt_change_listener)
+            safe_listener_detach(TEXT_LISTENER)
 
-        vbuff = _client.active_workspace.get_virtual_by_local(self.view.buffer_id())
+        global CLIENT
+        vbuff = CLIENT.active_workspace.get_by_local(self.view.buffer_id())
         vbuff.cleanup()
 
-        print(list(map(lambda x: x.get_name(), _client.tm.tasks)))
-        task = _client.tm.cancel_and_pop(f"buffer-ctl-{vbuff.codemp_id}")
-        print(list(map(lambda x: x.get_name(), _client.tm.tasks)))
-        print(task.cancelled())
+        CLIENT.tm.stop_and_pop(f"{g.BUFFCTL_TASK_PREFIX}-{vbuff.codemp_id}")
         # have to run the detach logic in sync, to keep a valid reference to the view.
         # sublime_asyncio.sync(buffer.detach(_client))
 
@@ -186,20 +130,20 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
         # we'll do it by hand with .attach(buffer).
         return False
 
-    # lets make this blocking :D
-    # def on_text_changed_async(self, changes):
+    # blocking :D
     def on_text_changed(self, changes):
-        global _client
         if (
             self.buffer.primary_view()
             .settings()
-            .get("codemp_ignore_next_on_modified_text_event", None)
+            .get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, None)
         ):
             status_log("ignoring echoing back the change.")
-            self.view.settings()["codemp_ignore_next_on_modified_text_event"] = False
+            self.view.settings()[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
             return
-        vbuff = _client.active_workspace.get_virtual_by_local(self.buffer.id())
-        _client.send_buffer_change(changes, vbuff)
+
+        global CLIENT
+        vbuff = CLIENT.active_workspace.get_by_local(self.buffer.id())
+        CLIENT.send_buffer_change(changes, vbuff)
 
 
 # Commands:
@@ -214,8 +158,8 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 #############################################################################
 class CodempConnectCommand(sublime_plugin.WindowCommand):
     def run(self, server_host):
-        global _client
-        sublime_asyncio.dispatch(_client.connect(server_host))
+        global CLIENT
+        rt.dispatch(CLIENT.connect(server_host))
 
     def input(self, args):
         if "server_host" not in args:
@@ -234,8 +178,8 @@ class ServerHostInputHandler(sublime_plugin.TextInputHandler):
 #############################################################################
 class CodempJoinCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id):
-        global _client
-        sublime_asyncio.dispatch(_client.join_workspace(workspace_id))
+        global CLIENT
+        rt.dispatch(CLIENT.join_workspace(workspace_id))
 
     def input_description(self):
         return "Join Workspace:"
@@ -254,9 +198,9 @@ class WorkspaceIdInputHandler(sublime_plugin.TextInputHandler):
 #############################################################################
 class CodempAttachCommand(sublime_plugin.WindowCommand):
     def run(self, buffer_id):
-        global _client
-        if _client.active_workspace is not None:
-            sublime_asyncio.dispatch(_client.active_workspace.attach(buffer_id))
+        global CLIENT
+        if CLIENT.active_workspace is not None:
+            rt.dispatch(CLIENT.active_workspace.attach(buffer_id))
         else:
             sublime.error_message(
                 "You haven't joined any worksapce yet. use `Codemp: Join Workspace`"
@@ -267,10 +211,10 @@ class CodempAttachCommand(sublime_plugin.WindowCommand):
 
     # This is awful, fix it
     def input(self, args):
-        global _client
-        if _client.active_workspace is not None:
+        global CLIENT
+        if CLIENT.active_workspace is not None:
             if "buffer_id" not in args:
-                existing_buffers = _client.active_workspace.handle.filetree()
+                existing_buffers = CLIENT.active_workspace.handle.filetree()
                 if len(existing_buffers) == 0:
                     return BufferIdInputHandler()
                 else:
@@ -284,7 +228,7 @@ class CodempAttachCommand(sublime_plugin.WindowCommand):
 
 class BufferIdInputHandler(sublime_plugin.TextInputHandler):
     def initial_text(self):
-        return "Create New Buffer:"
+        return "No buffers found in the workspace. Create new: "
 
 
 class ListBufferIdInputHandler(sublime_plugin.ListInputHandler):
@@ -292,8 +236,8 @@ class ListBufferIdInputHandler(sublime_plugin.ListInputHandler):
         return "buffer_id"
 
     def list_items(self):
-        global _client
-        return _client.active_workspace.handle.filetree()
+        global CLIENT
+        return CLIENT.active_workspace.handle.filetree()
 
     def next_input(self, args):
         if "buffer_id" not in args:
@@ -350,7 +294,7 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 #############################################################################
 class CodempDisconnectCommand(sublime_plugin.WindowCommand):
     def run(self):
-        sublime_asyncio.sync(disconnect_client())
+        rt.sync(disconnect_client())
 
 
 # Proxy Commands ( NOT USED )
