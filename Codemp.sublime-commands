@@ -26,8 +26,15 @@
   	"command": "codemp_connect",
   	"args": {
       // "server_host": "http://[::1]:50051"
-      // 'session' : 'default' (the name of the workspace to join)
   	}
+  },
+  {
+    "caption": "Codemp: Join",
+    "command": "codemp_join",
+    "arg": {
+      // 'workspace_id': 'asd'
+      // 'buffer_id': 'test'
+    },
   },
   {
   	"caption": "Codemp: Share",
@@ -39,29 +46,21 @@
   },
   {
     "caption": "Codemp: Join Workspace",
-    "command": "codemp_join",
+    "command": "codemp_join_workspace",
     "arg": {
-      // 'server_buffer' : 'test'
+      // 'workspace_id' : 'asd'
     },
   },
   {
     "caption": "Codemp: Join buffer",
-    "command": "codemp_attach",
+    "command": "codemp_join_buffer",
     "arg": {
-      // 'server_buffer' : 'test'
+      // 'buffer_id' : 'test'
     },
-  },
-  {
-    "caption": "Codemp: Disconnect Buffer",
-    "command": "codemp_disconnect_buffer",
-    "arg": {
-      // 'remote_name' : 'name of buffer to disconnect'
-    }
   },
   {
     "caption": "Codemp: Disconnect Client",
     "command": "codemp_disconnect",
-    "arg": {
-    }
+    "arg": {}
   },
 ]
