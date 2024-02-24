@@ -3,8 +3,7 @@ from typing import Optional, Callable
 
 
 import sublime
-import asyncio  # noqa: F401
-import typing  # noqa: F401
+import asyncio
 import tempfile
 import os
 import shutil
@@ -12,7 +11,7 @@ import shutil
 
 import Codemp.src.globals as g
 from Codemp.src.wrappers import BufferController, Workspace, Client
-from Codemp.src.utils import status_log, is_active, rowcol_to_region
+from Codemp.src.utils import status_log, rowcol_to_region
 from Codemp.src.TaskManager import TaskManager
 
 
@@ -167,44 +166,41 @@ class VirtualClient:
         self.active_workspace = ws
         self.spawn_cursor_manager(ws)
 
-    def get_by_local(self, id):
-        for vws in self.workspaces.values():
-            vbuff = vws.get_by_local(id)
-            if vbuff is not None:
-                return
-
     async def connect(self, server_host: str):
         status_log(f"Connecting to {server_host}")
         try:
             await self.handle.connect(server_host)
-        except Exception:
-            sublime.error_message("Could not connect:\n Make sure the server is up.")
+        except Exception as e:
+            sublime.error_message(f"Could not connect:\n Make sure the server is up.\nerror: {e}")
             return
 
         id = await self.handle.user_id()
-        print(f"TEST: {id}")
+        status_log(f"Connected to '{server_host}' with user id: {id}")
 
     async def join_workspace(
         self, workspace_id: str, user="sublime", password="lmaodefaultpassword"
-    ):
+    ) -> VirtualWorkspace:
         try:
             status_log(f"Logging into workspace: '{workspace_id}'")
             await self.handle.login(user, password, workspace_id)
         except Exception as e:
-            sublime.error_message(f"Failed to login to workspace '{workspace_id}': {e}")
+            status_log(f"Failed to login to workspace '{workspace_id}'.\nerror: {e}")
+            sublime.error_message(f"Failed to login to workspace '{workspace_id}'.\nerror: {e}")
             return
 
         try:
             status_log(f"Joining workspace: '{workspace_id}'")
             workspace_handle = await self.handle.join_workspace(workspace_id)
         except Exception as e:
-            sublime.error_message(f"Could not join workspace '{workspace_id}': {e}")
+            status_log(f"Could not join workspace '{workspace_id}'.\nerror: {e}")
+            sublime.error_message(f"Could not join workspace '{workspace_id}'.\nerror: {e}")
             return
 
         vws = VirtualWorkspace(self, workspace_id, workspace_handle)
         self.make_active(vws)
-
         self.workspaces[workspace_id] = vws
+
+        return vws
 
     def spawn_cursor_manager(self, virtual_workspace: VirtualWorkspace):
         async def move_cursor_task(vws):

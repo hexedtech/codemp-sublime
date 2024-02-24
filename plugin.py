@@ -3,7 +3,11 @@ import sublime_plugin
 
 from Codemp.src.codemp_client import VirtualClient
 from Codemp.src.TaskManager import rt
-from Codemp.src.utils import status_log, is_active, safe_listener_detach
+from Codemp.src.utils import status_log
+from Codemp.src.utils import safe_listener_detach
+from Codemp.src.utils import get_contents
+from Codemp.src.utils import populate_view
+from Codemp.src.utils import get_view_from_local_path
 import Codemp.src.globals as g
 
 CLIENT = None
@@ -34,7 +38,6 @@ async def disconnect_client():
     for vws in CLIENT.workspaces.values():
         vws.cleanup()
 
-    # fix me: allow riconnections
     CLIENT = None
 
 
@@ -43,34 +46,6 @@ def plugin_unloaded():
     # releasing the runtime, runs the disconnect callback defined when acquiring the event loop.
     CLIENT.tm.release(False)
     status_log("plugin unloaded")
-
-
-# Utils
-##############################################################################
-
-
-def get_contents(view):
-    r = sublime.Region(0, view.size())
-    return view.substr(r)
-
-
-def populate_view(view, content):
-    view.run_command(
-        "codemp_replace_text",
-        {
-            "start": 0,
-            "end": view.size(),
-            "content": content,
-            "change_id": view.change_id(),
-        },
-    )
-
-
-def get_view_from_local_path(path):
-    for window in sublime.windows():
-        for view in window.views():
-            if view.file_name() == path:
-                return view
 
 
 # Listeners
@@ -104,6 +79,8 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
     def on_activated(self):
         global TEXT_LISTENER
 
+        # sublime has no proper way to check if a view gained or lost input focus outside of this
+        # callback (i know right?), so we have to manually keep track of which view has the focus
         g.ACTIVE_CODEMP_VIEW = self.view.id()
         print("view {} activated".format(self.view.id()))
         TEXT_LISTENER.attach(self.view.buffer())
@@ -126,8 +103,6 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         vbuff.cleanup()
 
         CLIENT.tm.stop_and_pop(f"{g.BUFFCTL_TASK_PREFIX}-{vbuff.codemp_id}")
-        # have to run the detach logic in sync, to keep a valid reference to the view.
-        # sublime_asyncio.sync(buffer.detach(_client))
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
@@ -151,9 +126,14 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 
 
 # Commands:
-#   codemp_connect:     connect to a server.
-#   codemp_join:        join a workspace with a given name within the server.
-#   codemp_share:       shares a buffer with a given name in the workspace.
+#   codemp_connect:         connect to a server.
+#   codemp_join:            shortcut command if you already know both workspace id
+#                           and buffer id
+#   codemp_join_workspace:  joins a specific workspace, without joining also a buffer
+#   codemp_join_buffer:     joins a specific buffer within the current active workspace
+#   codemp_share:           ??? todo!()
+#   codemp_disconnect:      manually call the disconnection, triggering the cleanup and dropping
+#                           the connection
 #
 # Internal commands:
 #   replace_text:       swaps the content of a view with the given text.
@@ -167,75 +147,103 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "server_host" not in args:
-            return ServerHostInputHandler()
+            return ServerHost()
 
     def input_description(self):
         return "Server host:"
 
 
-class ServerHostInputHandler(sublime_plugin.TextInputHandler):
-    def initial_text(self):
-        return "http://127.0.0.1:50051"
+# Generic Join Command
+#############################################################################
+async def JoinCommand(client: VirtualClient, workspace_id: str, buffer_id: str):
+    vws = await client.join_workspace(workspace_id)
+    if vws is not None:
+        await vws.attach(buffer_id)
+
+
+class CodempJoinCommand(sublime_plugin.WindowCommand):
+    def run(self, workspace_id, buffer_id):
+        global CLIENT
+        rt.dispatch(JoinCommand(CLIENT, workspace_id, buffer_id))
+
+    def input_description(self):
+        return "Join:"
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            return WorkspaceIdAndFollowup()
 
 
 # Join Workspace Command
 #############################################################################
-class CodempJoinCommand(sublime_plugin.WindowCommand):
+class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id):
         global CLIENT
         rt.dispatch(CLIENT.join_workspace(workspace_id))
 
     def input_description(self):
-        return "Join Workspace:"
+        return "Join specific workspace"
 
     def input(self, args):
         if "workspace_id" not in args:
-            return WorkspaceIdInputHandler()
-
-
-class WorkspaceIdInputHandler(sublime_plugin.TextInputHandler):
-    def initial_text(self):
-        return "What workspace should I join?"
+            return RawWorkspaceId()
 
 
 # Join Buffer Command
 #############################################################################
-class CodempAttachCommand(sublime_plugin.WindowCommand):
+class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
     def run(self, buffer_id):
         global CLIENT
         if CLIENT.active_workspace is not None:
-            rt.dispatch(CLIENT.active_workspace.attach(buffer_id))
-        else:
             sublime.error_message(
-                "You haven't joined any worksapce yet. use `Codemp: Join Workspace`"
+                "You haven't joined any worksapce yet. \
+                use `Codemp: Join Workspace` or `Codemp: Join`"
             )
+            return
+
+        rt.dispatch(CLIENT.active_workspace.attach(buffer_id))
 
     def input_description(self):
-        return "Join Buffer in workspace:"
+        return "Join buffer in the active workspace"
 
     # This is awful, fix it
     def input(self, args):
         global CLIENT
-        if CLIENT.active_workspace is not None:
-            if "buffer_id" not in args:
-                existing_buffers = CLIENT.active_workspace.handle.filetree()
-                if len(existing_buffers) == 0:
-                    return BufferIdInputHandler()
-                else:
-                    return ListBufferIdInputHandler()
-        else:
+        if CLIENT.active_workspace is None:
             sublime.error_message(
-                "You haven't joined any worksapce yet. use `Codemp: Join Workspace`"
+                "You haven't joined any worksapce yet. \
+                use `Codemp: Join Workspace` or `Codemp: Join`"
             )
             return
 
+        if "buffer_id" not in args:
+            existing_buffers = CLIENT.active_workspace.handle.filetree()
+            if len(existing_buffers) == 0:
+                return RawBufferId()
+            else:
+                return ListBufferId()
 
-class BufferIdInputHandler(sublime_plugin.TextInputHandler):
+
+# Text Change Command
+#############################################################################
+class CodempReplaceTextCommand(sublime_plugin.TextCommand):
+    def run(self, edit, start, end, content, change_id):
+        # we modify the region to account for any change that happened in the mean time
+        region = self.view.transform_region_from(sublime.Region(start, end), change_id)
+        self.view.replace(edit, region, content)
+
+
+# Input Handlers
+##############################################################################
+class ServerHost(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "server_host"
+
     def initial_text(self):
-        return "No buffers found in the workspace. Create new: "
+        return "http://127.0.0.1:50051"
 
 
-class ListBufferIdInputHandler(sublime_plugin.ListInputHandler):
+class ListBufferId(sublime_plugin.ListInputHandler):
     def name(self):
         return "buffer_id"
 
@@ -245,18 +253,35 @@ class ListBufferIdInputHandler(sublime_plugin.ListInputHandler):
 
     def next_input(self, args):
         if "buffer_id" not in args:
-            return BufferIdInputHandler()
+            return RawBufferId()
 
 
-# Text Change Command
-#############################################################################
-# we call this command manually to have access to the edit token.
-class CodempReplaceTextCommand(sublime_plugin.TextCommand):
-    def run(self, edit, start, end, content, change_id):
-        # we modify the region to account for any change that happened in the mean time
-        region = self.view.transform_region_from(sublime.Region(start, end), change_id)
-        self.view.replace(edit, region, content)
+class RawWorkspaceId(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "workspace_id"
 
+    def placeholder(self):
+        return "Workspace Id"
+
+
+class WorkspaceIdAndFollowup(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "workspace_id"
+
+    def placeholder(self):
+        return "Workspace Id"
+
+    def next_input(self, args):
+        if "buffer_id" not in args:
+            return RawBufferId()
+
+
+class RawBufferId(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "buffer_id"
+
+    def placeholder(self):
+        return "Buffer Id"
 
 # Share Command
 # #############################################################################
@@ -272,27 +297,6 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 #         return "Share Buffer:"
 
 
-# class SublimeBufferPathInputHandler(sublime_plugin.ListInputHandler):
-#     def list_items(self):
-#         ret_list = []
-
-#         for window in sublime.windows():
-#             for view in window.views():
-#                 if view.file_name():
-#                     ret_list.append(view.file_name())
-
-#         return ret_list
-
-#     def next_input(self, args):
-#         if "server_id" not in args:
-#             return ServerIdInputHandler()
-
-
-# class ServerIdInputHandler(sublime_plugin.TextInputHandler):
-#     def initial_text(self):
-#         return "Buffer name on server"
-
-
 # Disconnect Command
 #############################################################################
 class CodempDisconnectCommand(sublime_plugin.WindowCommand):
@@ -300,7 +304,7 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
         rt.sync(disconnect_client())
 
 
-# Proxy Commands ( NOT USED )
+# Proxy Commands ( NOT USED, left just in case we need it again. )
 #############################################################################
 # class ProxyCodempShareCommand(sublime_plugin.WindowCommand):
 #   # on_window_command, does not trigger when called from the command palette
@@ -314,30 +318,6 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
 #
 #   def input_description(self):
 #       return 'Share Buffer:'
-#
-# class ProxyCodempJoinCommand(sublime_plugin.WindowCommand):
-#   def run(self, **kwargs):
-#       self.window.run_command("codemp_join", kwargs)
-#
-#   def input(self, args):
-#       if 'server_buffer' not in args:
-#           return ServerBufferInputHandler()
-#
-#   def input_description(self):
-#       return 'Join Buffer:'
-#
-# class ProxyCodempConnectCommand(sublime_plugin.WindowCommand):
-#   # on_window_command, does not trigger when called from the command palette
-#   # See: https://github.com/sublimehq/sublime_text/issues/2234
-#   def run(self, **kwargs):
-#       self.window.run_command("codemp_connect", kwargs)
-#
-#   def input(self, args):
-#       if 'server_host' not in args:
-#           return ServerHostInputHandler()
-#
-#   def input_description(self):
-#       return 'Server host:'
 
 
 # NOT NEEDED ANYMORE
