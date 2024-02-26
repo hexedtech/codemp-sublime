@@ -73,7 +73,7 @@ class VirtualWorkspace:
 
         # mapping remote ids -> local ids
         self.id_map: dict[str, str] = {}
-        self.active_buffers: dict[str, VirtualBuffer] = {}
+        self.active_buffers: dict[str, VirtualBuffer] = {}  # local_id -> VBuff
 
         # initialise the virtual filesystem
         tmpdir = tempfile.mkdtemp(prefix="codemp_")
@@ -90,6 +90,13 @@ class VirtualWorkspace:
         )
         self.sublime_window.set_project_data(proj_data)
 
+        s: dict = self.sublime_window.settings()
+        if s.get(g.CODEMP_WINDOW_TAG, False):
+            s[g.CODEMP_WINDOW_WORKSPACES].append(self.id)
+        else:
+            s[g.CODEMP_WINDOW_TAG] = True
+            s[g.CODEMP_WINDOW_WORKSPACES] = [self.id]
+
     def add_buffer(self, remote_id: str, vbuff: VirtualBuffer):
         self.id_map[remote_id] = vbuff.view.buffer_id()
         self.active_buffers[vbuff.view.buffer_id()] = vbuff
@@ -99,6 +106,8 @@ class VirtualWorkspace:
         # the event listener calls the cleanup code for each buffer independently on its own.
         for vbuff in self.active_buffers.values():
             vbuff.view.close()
+
+        self.active_buffers = {}  # drop all buffers, let them be garbace collected (hopefully)
 
         d = self.sublime_window.project_data()
         newf = list(
@@ -111,6 +120,10 @@ class VirtualWorkspace:
         self.sublime_window.set_project_data(d)
         status_log(f"cleaning up virtual workspace '{self.id}'")
         shutil.rmtree(self.rootdir, ignore_errors=True)
+
+        s = self.sublime_window.settings()
+        del s[g.CODEMP_WINDOW_TAG]
+        del s[g.CODEMP_WINDOW_WORKSPACES]
 
     def get_by_local(self, local_id: str) -> Optional[VirtualBuffer]:
         return self.active_buffers.get(local_id)
@@ -171,7 +184,9 @@ class VirtualClient:
         try:
             await self.handle.connect(server_host)
         except Exception as e:
-            sublime.error_message(f"Could not connect:\n Make sure the server is up.\nerror: {e}")
+            sublime.error_message(
+                f"Could not connect:\n Make sure the server is up.\nerror: {e}"
+            )
             return
 
         id = await self.handle.user_id()
@@ -185,7 +200,9 @@ class VirtualClient:
             await self.handle.login(user, password, workspace_id)
         except Exception as e:
             status_log(f"Failed to login to workspace '{workspace_id}'.\nerror: {e}")
-            sublime.error_message(f"Failed to login to workspace '{workspace_id}'.\nerror: {e}")
+            sublime.error_message(
+                f"Failed to login to workspace '{workspace_id}'.\nerror: {e}"
+            )
             return
 
         try:
@@ -193,7 +210,9 @@ class VirtualClient:
             workspace_handle = await self.handle.join_workspace(workspace_id)
         except Exception as e:
             status_log(f"Could not join workspace '{workspace_id}'.\nerror: {e}")
-            sublime.error_message(f"Could not join workspace '{workspace_id}'.\nerror: {e}")
+            sublime.error_message(
+                f"Could not join workspace '{workspace_id}'.\nerror: {e}"
+            )
             return
 
         vws = VirtualWorkspace(self, workspace_id, workspace_handle)
@@ -233,7 +252,10 @@ class VirtualClient:
 
             except asyncio.CancelledError:
                 status_log(f"cursor worker for '{vws.id}' stopped...")
-                return
+                raise
+            except Exception as e:
+                status_log(f"cursor worker '{vws.id}' crashed:\n{e}")
+                raise
 
         self.tm.dispatch(
             move_cursor_task(virtual_workspace),
@@ -280,7 +302,11 @@ class VirtualClient:
                     )
 
             except asyncio.CancelledError:
-                status_log("'{}' buffer worker stopped...".format(vb.codemp_id))
+                status_log(f"'{vb.codemp_id}' buffer worker stopped...")
+                raise
+            except Exception as e:
+                status_log(f"buffer worker '{vb.codemp_id}' crashed:\n{e}")
+                raise
 
         self.tm.dispatch(
             apply_buffer_change_task(vbuff),

@@ -1,4 +1,5 @@
 from typing import Optional
+import asyncio
 import Codemp.ext.sublime_asyncio as rt
 
 
@@ -16,17 +17,18 @@ class TaskManager:
     def sync(self, coro):
         rt.sync(coro)
 
-    def store(self, task):
-        self.tasks.append(task)
+    def remove_stopped(self):
+        self.tasks = list(filter(lambda T: not T.cancelled(), self.tasks))
 
-    def store_named(self, task, name=None):
-        task.set_name(name)
-        self.store(task)
+    def store(self, task, name=None):
+        if name is not None:
+            task.set_name(name)
+        self.tasks.append(task)
+        self.remove_stopped()
 
     def store_named_lambda(self, name):
         def _store(task):
-            task.set_name(name)
-            self.store(task)
+            self.store(task, name)
 
         return _store
 
@@ -44,20 +46,20 @@ class TaskManager:
             return self.task.pop(idx)
         return None
 
+    async def _stop(self, task):
+        task.cancel()  # cancelling a task, merely requests a cancellation.
+        try:
+            await task
+        except asyncio.CancelledError:
+            return
+
     def stop(self, name):
         t = self.get_task(name)
         if t is not None:
-            t.cancel()
-
-    def stop_and_pop(self, name) -> Optional:
-        idx, task = next(
-            ((i, t) for (i, t) in enumerate(self.tasks) if t.get_name() == name),
-            (None, None),
-        )
-        if idx is not None:
-            task.cancel()
-            return self.tasks.pop(idx)
+            rt.sync(
+                self._stop(t)
+            )  # awaiting the task blocks until it actually is finished.
 
     def stop_all(self):
         for task in self.tasks:
-            task.cancel()
+            rt.sync(self._stop(task))

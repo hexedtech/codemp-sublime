@@ -1,6 +1,6 @@
 use codemp::proto::common::Identity;
 use pyo3::types::PyList;
-use std::{format, ops::Deref, sync::Arc};
+use std::{format, sync::Arc};
 use tokio::sync::RwLock;
 
 use codemp::prelude::*;
