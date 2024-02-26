@@ -1,8 +1,12 @@
 BUFFCTL_TASK_PREFIX = "buffer-ctl"
 CURCTL_TASK_PREFIX = "cursor-ctl"
+
 CODEMP_BUFFER_TAG = "codemp-buffer"
 CODEMP_REMOTE_ID = "codemp-buffer-id"
 CODEMP_WORKSPACE_ID = "codemp-workspace-id"
+
+CODEMP_WINDOW_TAG = "codemp-window"
+CODEMP_WINDOW_WORKSPACES = "codemp-workspaces"
 
 WORKSPACE_FOLDER_PREFIX = "CODEMP::"
 SUBLIME_REGIONS_PREFIX = "codemp-cursors"

@@ -38,8 +38,6 @@ async def disconnect_client():
     for vws in CLIENT.workspaces.values():
         vws.cleanup()
 
-    CLIENT = None
-
 
 def plugin_unloaded():
     global CLIENT
@@ -51,9 +49,25 @@ def plugin_unloaded():
 # Listeners
 ##############################################################################
 class EventListener(sublime_plugin.EventListener):
-    def on_exit(self) -> None:
+    def on_exit(self):
         global CLIENT
         CLIENT.tm.release(True)
+
+    def on_pre_close_window(self, window):
+        global CLIENT
+        s = window.settings()
+        if s.get(g.CODEMP_WINDOW_TAG, False):
+            for wsid in s[g.CODEMP_WINDOW_WORKSPACES]:
+                ws = CLIENT[wsid]
+                if ws is not None:
+                    status_log(
+                        f"current active: {CLIENT.active_workspace.id}, ws = {ws.id}"
+                    )
+                    if ws.id == CLIENT.active_workspace.id:
+                        CLIENT.active_workspace = None
+                        CLIENT.tm.stop(f"{g.CURCTL_TASK_PREFIX}-{ws.id}")
+                    ws.cleanup()
+                    del CLIENT.workspaces[wsid]
 
 
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
@@ -102,7 +116,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         vbuff = CLIENT[wsid].get_by_local(self.view.buffer_id())
         vbuff.cleanup()
 
-        CLIENT.tm.stop_and_pop(f"{g.BUFFCTL_TASK_PREFIX}-{vbuff.codemp_id}")
+        CLIENT.tm.stop(f"{g.BUFFCTL_TASK_PREFIX}-{vbuff.codemp_id}")
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
@@ -282,6 +296,7 @@ class RawBufferId(sublime_plugin.TextInputHandler):
 
     def placeholder(self):
         return "Buffer Id"
+
 
 # Share Command
 # #############################################################################
