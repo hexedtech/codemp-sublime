@@ -2,6 +2,7 @@ import sublime
 import sublime_plugin
 
 from Codemp.src.codemp_client import VirtualClient
+from Codemp.src.codemp_client import CodempLogger
 from Codemp.src.TaskManager import rt
 from Codemp.src.utils import status_log
 from Codemp.src.utils import safe_listener_detach
@@ -9,6 +10,7 @@ from Codemp.src.utils import get_contents
 from Codemp.src.utils import populate_view
 from Codemp.src.utils import get_view_from_local_path
 import Codemp.src.globals as g
+from Codemp.bindings.codemp_client import init_logger
 
 CLIENT = None
 TEXT_LISTENER = None
@@ -24,6 +26,9 @@ def plugin_loaded():
     # pass in the exit_handler coroutine that will be called upon relasing the event loop.
     CLIENT = VirtualClient(disconnect_client)
     TEXT_LISTENER = CodempClientTextChangeListener()
+
+    logger = CodempLogger(init_logger(True))
+    CLIENT.tm.dispatch(logger.spawn_logger(), "codemp-logger")
 
     status_log("plugin loaded")
 
@@ -43,7 +48,6 @@ def plugin_unloaded():
     global CLIENT
     # releasing the runtime, runs the disconnect callback defined when acquiring the event loop.
     CLIENT.tm.release(False)
-    status_log("plugin unloaded")
 
 
 # Listeners
@@ -60,9 +64,6 @@ class EventListener(sublime_plugin.EventListener):
             for wsid in s[g.CODEMP_WINDOW_WORKSPACES]:
                 ws = CLIENT[wsid]
                 if ws is not None:
-                    status_log(
-                        f"current active: {CLIENT.active_workspace.id}, ws = {ws.id}"
-                    )
                     if ws.id == CLIENT.active_workspace.id:
                         CLIENT.active_workspace = None
                         CLIENT.tm.stop(f"{g.CURCTL_TASK_PREFIX}-{ws.id}")
@@ -87,23 +88,18 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         if vbuff is not None:
             CLIENT.send_cursor(vbuff)
 
-    # We only edit on one view at a time, therefore we only need one TextChangeListener
-    # Each time we focus a view to write on it, we first attach the listener to that buffer.
-    # When we defocus, we detach it.
     def on_activated(self):
-        global TEXT_LISTENER
-
         # sublime has no proper way to check if a view gained or lost input focus outside of this
         # callback (i know right?), so we have to manually keep track of which view has the focus
         g.ACTIVE_CODEMP_VIEW = self.view.id()
-        print("view {} activated".format(self.view.id()))
+        # print("view {} activated".format(self.view.id()))
+        global TEXT_LISTENER
         TEXT_LISTENER.attach(self.view.buffer())
 
     def on_deactivated(self):
-        global TEXT_LISTENER
-
         g.ACTIVE_CODEMP_VIEW = None
-        print("view {} deactivated".format(self.view.id()))
+        # print("view {} deactivated".format(self.view.id()))
+        global TEXT_LISTENER
         safe_listener_detach(TEXT_LISTENER)
 
     def on_pre_close(self):
@@ -193,7 +189,7 @@ class CodempJoinCommand(sublime_plugin.WindowCommand):
 class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id):
         global CLIENT
-        rt.dispatch(CLIENT.join_workspace(workspace_id))
+        rt.dispatch(CLIENT.join_workspace(workspace_id, "sublime2"))
 
     def input_description(self):
         return "Join specific workspace"
@@ -208,7 +204,7 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
 class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
     def run(self, buffer_id):
         global CLIENT
-        if CLIENT.active_workspace is not None:
+        if CLIENT.active_workspace is None:
             sublime.error_message(
                 "You haven't joined any worksapce yet. \
                 use `Codemp: Join Workspace` or `Codemp: Join`"

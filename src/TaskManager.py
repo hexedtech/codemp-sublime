@@ -56,9 +56,7 @@ class TaskManager:
     def stop(self, name):
         t = self.get_task(name)
         if t is not None:
-            rt.sync(
-                self._stop(t)
-            )  # awaiting the task blocks until it actually is finished.
+            rt.sync(self._stop(t))
 
     def stop_all(self):
         for task in self.tasks:

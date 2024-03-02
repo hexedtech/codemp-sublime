@@ -15,6 +15,26 @@ from Codemp.src.utils import status_log, rowcol_to_region
 from Codemp.src.TaskManager import TaskManager
 
 
+class CodempLogger:
+    def __init__(self, handle):
+        self.handle = handle
+
+    async def message(self):
+        return await self.handle.message()
+
+    async def spawn_logger(self):
+        status_log("spinning up the logger...")
+        try:
+            while msg := await self.handle.message():
+                print(msg)
+        except asyncio.CancelledError:
+            status_log("stopping logger")
+            raise
+        except Exception as e:
+            status_log(f"logger crashed unexpectedly:\n{e}")
+            raise
+
+
 # This class is used as an abstraction between the local buffers (sublime side) and the
 # remote buffers (codemp side), to handle the syncronicity.
 # This class is mainly manipulated by a VirtualWorkspace, that manages its buffers
@@ -133,7 +153,6 @@ class VirtualWorkspace:
 
     async def attach(self, id: str):
         if id is None:
-            status_log("can't attach if buffer does not exist, aborting.")
             return
 
         await self.handle.fetch_buffers()
@@ -172,10 +191,8 @@ class VirtualClient:
         return self.workspaces.get(key)
 
     def make_active(self, ws: VirtualWorkspace):
-        # TODO: Logic to deal with swapping to and from workspaces,
-        # what happens to the cursor tasks etc..
         if self.active_workspace is not None:
-            self.tm.stop_and_pop(f"{g.CURCTL_TASK_PREFIX}-{self.active_workspace.id}")
+            self.tm.stop(f"{g.CURCTL_TASK_PREFIX}-{self.active_workspace.id}")
         self.active_workspace = ws
         self.spawn_cursor_manager(ws)
 
@@ -193,26 +210,20 @@ class VirtualClient:
         status_log(f"Connected to '{server_host}' with user id: {id}")
 
     async def join_workspace(
-        self, workspace_id: str, user="sublime", password="lmaodefaultpassword"
+        self, workspace_id: str, user="sublime2", password="lmaodefaultpassword"
     ) -> VirtualWorkspace:
         try:
             status_log(f"Logging into workspace: '{workspace_id}'")
             await self.handle.login(user, password, workspace_id)
         except Exception as e:
-            status_log(f"Failed to login to workspace '{workspace_id}'.\nerror: {e}")
-            sublime.error_message(
-                f"Failed to login to workspace '{workspace_id}'.\nerror: {e}"
-            )
+            status_log(f"Failed to login to workspace '{workspace_id}'.\nerror: {e}", True)
             return
 
         try:
             status_log(f"Joining workspace: '{workspace_id}'")
             workspace_handle = await self.handle.join_workspace(workspace_id)
         except Exception as e:
-            status_log(f"Could not join workspace '{workspace_id}'.\nerror: {e}")
-            sublime.error_message(
-                f"Could not join workspace '{workspace_id}'.\nerror: {e}"
-            )
+            status_log(f"Could not join workspace '{workspace_id}'.\nerror: {e}", True)
             return
 
         vws = VirtualWorkspace(self, workspace_id, workspace_handle)
@@ -229,10 +240,6 @@ class VirtualClient:
                     vbuff = vws.get_by_remote(cursor_event.buffer)
 
                     if vbuff is None:
-                        status_log(
-                            f"Received a cursor event for an unknown \
-                            or inactive buffer: {cursor_event.buffer}"
-                        )
                         continue
 
                     reg = rowcol_to_region(
@@ -264,7 +271,7 @@ class VirtualClient:
 
     def send_cursor(self, vbuff: VirtualBuffer):
         # TODO: only the last placed cursor/selection.
-        status_log(f"sending cursor position in workspace: {vbuff.workspace.id}")
+        # status_log(f"sending cursor position in workspace: {vbuff.workspace.id}")
         region = vbuff.view.sel()[0]
         start = vbuff.view.rowcol(region.begin())  # only counts UTF8 chars
         end = vbuff.view.rowcol(region.end())
@@ -283,9 +290,6 @@ class VirtualClient:
                     # We are not listening on it. Otherwise, interrupt the listening
                     # to avoid echoing back the change just received.
                     if vb.view.id() == g.ACTIVE_CODEMP_VIEW:
-                        status_log(
-                            "received a text change with view active, stopping the echo."
-                        )
                         vb.view.settings()[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = True
 
                     # we need to go through a sublime text command, since the method,
