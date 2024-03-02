@@ -2,9 +2,11 @@ import sublime
 import sublime_plugin
 
 
-def status_log(msg):
+def status_log(msg, popup=False):
     sublime.status_message("[codemp] {}".format(msg))
     print("[codemp] {}".format(msg))
+    if popup:
+        sublime.error_message(msg)
 
 
 def rowcol_to_region(view, start, end):

@@ -1,7 +1,9 @@
 use codemp::proto::common::Identity;
 use pyo3::types::PyList;
 use std::{format, sync::Arc};
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tracing;
+use tracing_subscriber;
 
 use codemp::prelude::*;
 use codemp::{errors::Error as CodempError, proto::files::BufferNode};
@@ -12,7 +14,7 @@ use pyo3::{
     types::{PyString, PyType},
 };
 
-// ERRORS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// ERRORS And LOGGING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 struct PyCodempError(CodempError);
 impl From<CodempError> for PyCodempError {
     fn from(err: CodempError) -> Self {
@@ -39,6 +41,33 @@ impl From<PyCodempError> for PyErr {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+struct LoggerProducer(mpsc::Sender<String>);
+
+impl std::io::Write for LoggerProducer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // TODO this is a LOSSY logger!!
+        let _ = self.0.try_send(String::from_utf8_lossy(buf).to_string()); // ignore: logger disconnected or with full buffer
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[pyclass]
+struct PyLogger(Arc<Mutex<mpsc::Receiver<String>>>);
+
+#[pymethods]
+impl PyLogger {
+    fn message<'a>(&'a self, py: Python<'a>) -> PyResult<&'a PyAny> {
+        let rc = self.0.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move { Ok(rc.lock().await.recv().await) })
+    }
+}
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 // Workflow:
@@ -55,6 +84,33 @@ impl From<PyCodempError> for PyErr {
 #[pyfunction]
 fn codemp_init<'a>(py: Python<'a>) -> PyResult<Py<PyClient>> {
     Ok(Py::new(py, PyClient::default())?)
+}
+
+#[pyfunction]
+fn init_logger(py: Python<'_>, debug: Option<bool>) -> PyResult<Py<PyLogger>> {
+    let (tx, rx) = mpsc::channel(256);
+    let level = if debug.unwrap_or(false) {
+        tracing::Level::DEBUG
+    } else {
+        tracing::Level::INFO
+    };
+    let format = tracing_subscriber::fmt::format()
+        .without_time()
+        .with_level(true)
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_source_location(false)
+        .compact();
+    tracing_subscriber::fmt()
+        .with_ansi(false)
+        .event_format(format)
+        .with_max_level(level)
+        .with_writer(std::sync::Mutex::new(LoggerProducer(tx)))
+        .init();
+    Ok(Py::new(py, PyLogger(Arc::new(Mutex::new(rx))))?)
 }
 
 #[pyclass]
@@ -477,10 +533,12 @@ impl PyTextChange {
 #[pymodule]
 fn codemp_client(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(codemp_init, m)?)?;
+    m.add_function(wrap_pyfunction!(init_logger, m)?)?;
     m.add_class::<PyClient>()?;
     m.add_class::<PyWorkspace>()?;
     m.add_class::<PyCursorController>()?;
     m.add_class::<PyBufferController>()?;
+    m.add_class::<PyLogger>()?;
 
     m.add_class::<PyId>()?;
     m.add_class::<PyCursorEvent>()?;
