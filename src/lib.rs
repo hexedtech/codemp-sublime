@@ -94,6 +94,7 @@ fn init_logger(py: Python<'_>, debug: Option<bool>) -> PyResult<Py<PyLogger>> {
     } else {
         tracing::Level::INFO
     };
+
     let format = tracing_subscriber::fmt::format()
         .without_time()
         .with_level(true)
