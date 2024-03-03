@@ -27,7 +27,7 @@ def plugin_loaded():
     CLIENT = VirtualClient(disconnect_client)
     TEXT_LISTENER = CodempClientTextChangeListener()
 
-    logger = CodempLogger(init_logger(True))
+    logger = CodempLogger(init_logger(False))
     CLIENT.tm.dispatch(logger.spawn_logger(), "codemp-logger")
 
     status_log("plugin loaded")
@@ -189,7 +189,7 @@ class CodempJoinCommand(sublime_plugin.WindowCommand):
 class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id):
         global CLIENT
-        rt.dispatch(CLIENT.join_workspace(workspace_id, "sublime2"))
+        rt.dispatch(CLIENT.join_workspace(workspace_id, "sublime3"))
 
     def input_description(self):
         return "Join specific workspace"
