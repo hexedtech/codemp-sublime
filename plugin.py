@@ -126,7 +126,7 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
     def on_text_changed(self, changes):
         s = self.buffer.primary_view().settings()
         if s.get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, None):
-            status_log("ignoring echoing back the change.")
+            status_log("Ignoring echoing back the change.")
             s[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
             return
 

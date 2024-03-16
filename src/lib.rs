@@ -1,12 +1,16 @@
-use codemp::proto::common::Identity;
 use pyo3::types::PyList;
 use std::{format, sync::Arc};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing;
 use tracing_subscriber;
 
+use codemp::errors::Error as CodempError;
 use codemp::prelude::*;
-use codemp::{errors::Error as CodempError, proto::files::BufferNode};
+use codemp_proto::{
+    common::Identity,
+    cursor::{CursorEvent, CursorPosition},
+    files::BufferNode,
+};
 
 use pyo3::{
     exceptions::{PyBaseException, PyConnectionError, PyRuntimeError},
@@ -345,7 +349,7 @@ impl From<Arc<CodempCursorController>> for PyCursorController {
 #[pymethods]
 impl PyCursorController {
     fn send<'a>(&'a self, path: String, start: (i32, i32), end: (i32, i32)) -> PyResult<()> {
-        let pos = CodempCursorPosition {
+        let pos = CursorPosition {
             buffer: BufferNode { path },
             start: start.into(),
             end: end.into(),
@@ -464,8 +468,8 @@ struct PyCursorEvent {
     end: (i32, i32),
 }
 
-impl From<CodempCursorEvent> for PyCursorEvent {
-    fn from(value: CodempCursorEvent) -> Self {
+impl From<CursorEvent> for PyCursorEvent {
+    fn from(value: CursorEvent) -> Self {
         // todo, handle this optional better?
         let pos = value.position;
         PyCursorEvent {
