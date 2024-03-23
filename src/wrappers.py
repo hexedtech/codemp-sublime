@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Optional
-from Codemp.bindings.codemp_client import codemp_init, PyCursorEvent, PyTextChange, PyId
+from ..bindings.codemp import codemp_init, PyCursorEvent, PyTextChange, PyId
 
 ######################################################################################
 # These are helper wrappers, that wrap the coroutines returned from the

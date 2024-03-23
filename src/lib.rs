@@ -4,8 +4,8 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing;
 use tracing_subscriber;
 
-use codemp::errors::Error as CodempError;
-use codemp::prelude::*;
+use ::codemp::errors::Error as CodempError;
+use ::codemp::prelude::*;
 use codemp_proto::{
     common::Identity,
     cursor::{CursorEvent, CursorPosition},
@@ -536,7 +536,7 @@ impl PyTextChange {
 
 /* ------ Python module --------*/
 #[pymodule]
-fn codemp_client(_py: Python, m: &PyModule) -> PyResult<()> {
+fn codemp(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(codemp_init, m)?)?;
     m.add_function(wrap_pyfunction!(init_logger, m)?)?;
     m.add_class::<PyClient>()?;
