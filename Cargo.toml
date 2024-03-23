@@ -1,11 +1,11 @@
 [package]
-name = "CodempClient-Sublime"
+name = "Codemp-Sublime"
 version = "0.6.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "codemp_client"
+name = "codemp"
 crate-type = ["cdylib"]
 
 [dependencies]

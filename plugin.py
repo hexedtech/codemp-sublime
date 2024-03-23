@@ -1,16 +1,17 @@
 import sublime
 import sublime_plugin
 
-from Codemp.src.codemp_client import VirtualClient
-from Codemp.src.codemp_client import CodempLogger
-from Codemp.src.TaskManager import rt
-from Codemp.src.utils import status_log
-from Codemp.src.utils import safe_listener_detach
-from Codemp.src.utils import get_contents
-from Codemp.src.utils import populate_view
-from Codemp.src.utils import get_view_from_local_path
-import Codemp.src.globals as g
-from Codemp.bindings.codemp_client import init_logger
+# import os
+# import sys
+# import importlib.util
+
+from .src.codemp_client import VirtualClient
+from .src.codemp_client import CodempLogger
+from .src.TaskManager import rt
+from .src.utils import status_log
+from .src.utils import safe_listener_detach
+from .src import globals as g
+from .bindings.codemp import init_logger
 
 CLIENT = None
 TEXT_LISTENER = None
