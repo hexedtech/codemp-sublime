@@ -109,12 +109,14 @@ fn init_logger(py: Python<'_>, debug: Option<bool>) -> PyResult<Py<PyLogger>> {
         .with_line_number(false)
         .with_source_location(false)
         .compact();
-    tracing_subscriber::fmt()
+
+    let _ = tracing_subscriber::fmt()
         .with_ansi(false)
         .event_format(format)
         .with_max_level(level)
         .with_writer(std::sync::Mutex::new(LoggerProducer(tx)))
-        .init();
+        .try_init();
+
     Ok(Py::new(py, PyLogger(Arc::new(Mutex::new(rx))))?)
 }
 
@@ -205,7 +207,7 @@ impl PyClient {
             };
 
             let Some(ws) = cli.as_ref().unwrap().get_workspace(id.as_str()) else {
-                return Ok(None)
+                return Ok(None);
             };
 
             Python::with_gil(|py| Ok(Some(Py::new(py, PyWorkspace(ws))?)))
@@ -324,7 +326,7 @@ impl PyWorkspace {
         path: String,
     ) -> PyResult<Option<Py<PyBufferController>>> {
         let Some(bufctl) = self.0.buffer_by_name(path.as_str()) else {
-            return Ok(None)
+            return Ok(None);
         };
 
         Ok(Some(Py::new(py, PyBufferController::from(bufctl))?))
