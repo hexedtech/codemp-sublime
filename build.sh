@@ -17,7 +17,7 @@ echo "Building .SO with python: $PYO3_PYTHON"
 env PYO3_PYTHON="${PYO3_PYTHON}" cargo build
 echo "Copying into: $TARGET_DIR/$SO_TARGET"
 
-echo "Building python wheel..."
+echo "Building python wheels..."
 maturin build -i "$PYO3_PYTHON"
 
 wheels=($WHEEL_DIR/$WHEEL_NAME*.whl)
