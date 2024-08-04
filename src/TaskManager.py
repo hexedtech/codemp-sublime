@@ -1,21 +1,29 @@
 from typing import Optional
 import asyncio
-import Codemp.ext.sublime_asyncio as rt
+from ..ext import sublime_asyncio as rt
 
 
 class TaskManager:
-    def __init__(self, exit_handler):
+    def __init__(self):
         self.tasks = []
-        self.exit_handler_id = rt.acquire(exit_handler)
+        self.runtime = rt
+        self.exit_handler_id = None
+
+    def acquire(self, exit_handler):
+        if self.exit_handler_id is None:
+            # don't allow multiple exit handlers
+            self.exit_handler_id = self.runtime.acquire(exit_handler)
+
+        return self.exit_handler_id
 
     def release(self, at_exit):
-        rt.release(at_exit=at_exit, exit_handler_id=self.exit_handler_id)
+        self.runtime.release(at_exit=at_exit, exit_handler_id=self.exit_handler_id)
 
-    def dispatch(self, coro, name):
-        rt.dispatch(coro, self.store_named_lambda(name))
+    def dispatch(self, coro, name=None):
+        self.runtime.dispatch(coro, self.store_named_lambda(name))
 
     def sync(self, coro):
-        rt.sync(coro)
+        self.runtime.sync(coro)
 
     def remove_stopped(self):
         self.tasks = list(filter(lambda T: not T.cancelled(), self.tasks))
@@ -26,7 +34,7 @@ class TaskManager:
         self.tasks.append(task)
         self.remove_stopped()
 
-    def store_named_lambda(self, name):
+    def store_named_lambda(self, name=None):
         def _store(task):
             self.store(task, name)
 
@@ -43,7 +51,7 @@ class TaskManager:
     def pop_task(self, name) -> Optional:
         idx = self.get_task_idx(name)
         if id is not None:
-            return self.task.pop(idx)
+            return self.tasks.pop(idx)
         return None
 
     async def _stop(self, task):
@@ -56,8 +64,12 @@ class TaskManager:
     def stop(self, name):
         t = self.get_task(name)
         if t is not None:
-            rt.dispatch(self._stop(t))
+            self.runtime.dispatch(self._stop(t))
 
     def stop_all(self):
         for task in self.tasks:
-            rt.dispatch(self._stop(task))
+            self.runtime.dispatch(self._stop(task))
+
+
+# singleton instance
+tm = TaskManager()

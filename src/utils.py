@@ -16,8 +16,13 @@ def rowcol_to_region(view, start, end):
 
 
 def safe_listener_detach(txt_listener: sublime_plugin.TextChangeListener):
-    if txt_listener.is_attached():
+    if txt_listener is not None and txt_listener.is_attached():
         txt_listener.detach()
+
+
+def safe_listener_attach(txt_listener: sublime_plugin.TextChangeListener, buffer):
+    if txt_listener is not None and not txt_listener.is_attached():
+        txt_listener.attach(buffer)
 
 
 def get_contents(view):

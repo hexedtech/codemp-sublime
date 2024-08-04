@@ -5,71 +5,80 @@ import sublime_plugin
 # import sys
 # import importlib.util
 
-from .src.codemp_client import VirtualClient
-from .src.codemp_client import CodempLogger
-from .src.TaskManager import rt
+from .src.TaskManager import tm
+from .src.client import client, VirtualClient
+from .src.client import CodempLogger
 from .src.utils import status_log
 from .src.utils import safe_listener_detach
+from .src.utils import safe_listener_attach
 from .src import globals as g
 from .bindings.codemp import init_logger
 
-CLIENT = None
 TEXT_LISTENER = None
-
 
 # Initialisation and Deinitialisation
 ##############################################################################
+
+
 def plugin_loaded():
-    global CLIENT
     global TEXT_LISTENER
 
     # instantiate and start a global asyncio event loop.
     # pass in the exit_handler coroutine that will be called upon relasing the event loop.
-    CLIENT = VirtualClient(disconnect_client)
-    TEXT_LISTENER = CodempClientTextChangeListener()
+    tm.acquire(disconnect_client)
 
     logger = CodempLogger(init_logger(False))
-    CLIENT.tm.dispatch(logger.spawn_logger(), "codemp-logger")
+    tm.dispatch(logger.log(), "codemp-logger")
+
+    TEXT_LISTENER = CodempClientTextChangeListener()
 
     status_log("plugin loaded")
 
 
 async def disconnect_client():
-    global CLIENT
     global TEXT_LISTENER
 
-    safe_listener_detach(TEXT_LISTENER)
-    CLIENT.tm.stop_all()
+    tm.stop_all()
 
-    for vws in CLIENT.workspaces.values():
+    if TEXT_LISTENER is not None:
+        safe_listener_detach(TEXT_LISTENER)
+
+    for vws in client.workspaces.values():
         vws.cleanup()
 
 
 def plugin_unloaded():
-    global CLIENT
     # releasing the runtime, runs the disconnect callback defined when acquiring the event loop.
-    CLIENT.tm.release(False)
+    status_log("unloading")
+    tm.release(False)
 
 
 # Listeners
 ##############################################################################
 class EventListener(sublime_plugin.EventListener):
     def on_exit(self):
-        global CLIENT
-        CLIENT.tm.release(True)
+        tm.release(True)
 
     def on_pre_close_window(self, window):
-        global CLIENT
+        if client.active_workspace is None:
+            return  # nothing to do
+
+        client.make_active(None)
+
         s = window.settings()
-        if s.get(g.CODEMP_WINDOW_TAG, False):
-            for wsid in s[g.CODEMP_WINDOW_WORKSPACES]:
-                ws = CLIENT[wsid]
-                if ws is not None:
-                    if ws.id == CLIENT.active_workspace.id:
-                        CLIENT.active_workspace = None
-                        CLIENT.tm.stop(f"{g.CURCTL_TASK_PREFIX}-{ws.id}")
-                    ws.cleanup()
-                    del CLIENT.workspaces[wsid]
+        if not s.get(g.CODEMP_WINDOW_TAG, False):
+            return
+
+        for wsid in s[g.CODEMP_WINDOW_WORKSPACES]:
+            ws = client[wsid]
+            if ws is None:
+                status_log(
+                    "[WARN] a tag on the window was found but not a matching workspace."
+                )
+                continue
+
+            ws.cleanup()
+            del client.workspaces[wsid]
 
 
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
@@ -82,12 +91,13 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         return False
 
     def on_selection_modified_async(self):
-        s = self.view.settings()
+        ws = client.get_workspace(self.view)
+        if ws is None:
+            return
 
-        global CLIENT
-        vbuff = CLIENT[s[g.CODEMP_WORKSPACE_ID]].get_by_local(self.view.buffer_id())
+        vbuff = ws.get_by_local(self.view.buffer_id())
         if vbuff is not None:
-            CLIENT.send_cursor(vbuff)
+            vbuff.send_cursor(ws)
 
     def on_activated(self):
         # sublime has no proper way to check if a view gained or lost input focus outside of this
@@ -95,7 +105,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         g.ACTIVE_CODEMP_VIEW = self.view.id()
         # print("view {} activated".format(self.view.id()))
         global TEXT_LISTENER
-        TEXT_LISTENER.attach(self.view.buffer())
+        safe_listener_attach(TEXT_LISTENER, self.view.buffer())
 
     def on_deactivated(self):
         g.ACTIVE_CODEMP_VIEW = None
@@ -108,12 +118,13 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         if self.view.id() == g.ACTIVE_CODEMP_VIEW:
             safe_listener_detach(TEXT_LISTENER)
 
-        global CLIENT
-        wsid = self.view.settings().get(g.CODEMP_WORKSPACE_ID)
-        vbuff = CLIENT[wsid].get_by_local(self.view.buffer_id())
-        vbuff.cleanup()
+        ws = client.get_workspace(self.view)
+        if ws is None:
+            return
 
-        CLIENT.tm.stop(f"{g.BUFFCTL_TASK_PREFIX}-{vbuff.codemp_id}")
+        vbuff = ws.get_by_local(self.view.buffer_id())
+        if vbuff is not None:
+            vbuff.cleanup()
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
@@ -131,9 +142,9 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
             s[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
             return
 
-        global CLIENT
-        vbuff = CLIENT[s[g.CODEMP_WORKSPACE_ID]].get_by_local(self.buffer.id())
-        CLIENT.send_buffer_change(changes, vbuff)
+        vbuff = client.get_buffer(self.buffer.primary_view())
+        if vbuff is not None:
+            vbuff.send_buffer_change(changes)
 
 
 # Commands:
@@ -153,8 +164,7 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 #############################################################################
 class CodempConnectCommand(sublime_plugin.WindowCommand):
     def run(self, server_host):
-        global CLIENT
-        rt.dispatch(CLIENT.connect(server_host))
+        tm.dispatch(client.connect(server_host))
 
     def input(self, args):
         if "server_host" not in args:
@@ -174,8 +184,7 @@ async def JoinCommand(client: VirtualClient, workspace_id: str, buffer_id: str):
 
 class CodempJoinCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id, buffer_id):
-        global CLIENT
-        rt.dispatch(JoinCommand(CLIENT, workspace_id, buffer_id))
+        tm.dispatch(JoinCommand(client, workspace_id, buffer_id))
 
     def input_description(self):
         return "Join:"
@@ -189,8 +198,7 @@ class CodempJoinCommand(sublime_plugin.WindowCommand):
 #############################################################################
 class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id):
-        global CLIENT
-        rt.dispatch(CLIENT.join_workspace(workspace_id, "sublime3"))
+        tm.dispatch(client.join_workspace(workspace_id, "sublime3"))
 
     def input_description(self):
         return "Join specific workspace"
@@ -204,23 +212,21 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
 #############################################################################
 class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
     def run(self, buffer_id):
-        global CLIENT
-        if CLIENT.active_workspace is None:
+        if client.active_workspace is None:
             sublime.error_message(
                 "You haven't joined any worksapce yet. \
                 use `Codemp: Join Workspace` or `Codemp: Join`"
             )
             return
 
-        rt.dispatch(CLIENT.active_workspace.attach(buffer_id))
+        tm.dispatch(client.active_workspace.attach(buffer_id))
 
     def input_description(self):
         return "Join buffer in the active workspace"
 
     # This is awful, fix it
     def input(self, args):
-        global CLIENT
-        if CLIENT.active_workspace is None:
+        if client.active_workspace is None:
             sublime.error_message(
                 "You haven't joined any worksapce yet. \
                 use `Codemp: Join Workspace` or `Codemp: Join`"
@@ -228,7 +234,7 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
             return
 
         if "buffer_id" not in args:
-            existing_buffers = CLIENT.active_workspace.handle.filetree()
+            existing_buffers = client.active_workspace.handle.filetree()
             if len(existing_buffers) == 0:
                 return RawBufferId()
             else:
@@ -259,8 +265,7 @@ class ListBufferId(sublime_plugin.ListInputHandler):
         return "buffer_id"
 
     def list_items(self):
-        global CLIENT
-        return CLIENT.active_workspace.handle.filetree()
+        return client.active_workspace.handle.filetree()
 
     def next_input(self, args):
         if "buffer_id" not in args:
@@ -313,7 +318,7 @@ class RawBufferId(sublime_plugin.TextInputHandler):
 #############################################################################
 class CodempDisconnectCommand(sublime_plugin.WindowCommand):
     def run(self):
-        rt.sync(disconnect_client())
+        tm.sync(disconnect_client())
 
 
 # Proxy Commands ( NOT USED, left just in case we need it again. )
