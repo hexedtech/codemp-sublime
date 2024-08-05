@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Optional
 
 import sublime
+import random
 import asyncio
 import tempfile
 import os
@@ -125,7 +126,7 @@ class VirtualBuffer:
                     region.begin(), region.end(), change.str
                 )
             )
-            self.buffctl.send(region.begin(), region.end(), change.str)
+            self.buffctl.send(region.begin(), region.end()+len(change.str)-1, change.str)
 
     def send_cursor(self, vws: VirtualWorkspace):
         # TODO: only the last placed cursor/selection.
@@ -340,10 +341,10 @@ class VirtualClient:
         status_log(f"Connected to '{server_host}' with user id: {id}")
 
     async def join_workspace(
-        self, workspace_id: str, user="sublime2", password="lmaodefaultpassword"
+        self, workspace_id: str, user=f"user-{random.random()}", password="lmaodefaultpassword"
     ) -> Optional[VirtualWorkspace]:
         try:
-            status_log(f"Logging into workspace: '{workspace_id}'")
+            status_log(f"Logging into workspace: '{workspace_id}' with user: {user}")
             await self.handle.login(user, password, workspace_id)
         except Exception as e:
             status_log(
