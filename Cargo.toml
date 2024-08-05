@@ -9,8 +9,8 @@ name = "codemp"
 crate-type = ["cdylib"]
 
 [dependencies]
-codemp = { git = "ssh://git@github.com/codewithotherpeopleandchangenamelater/codemp.git", tag="v0.6.1"}
-codemp-proto = { git = "ssh://git@github.com/codewithotherpeopleandchangenamelater/codemp-proto.git", tag = "v0.6.1" }
+codemp = { git = "ssh://git@github.com/hexedtech/codemp.git", branch="glue"}
+codemp-proto = { git = "ssh://git@github.com/hexedtech/codemp-proto.git", tag = "v0.6.1" }
 pyo3 = { version = "0.20", features = ["extension-module"] }
 pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
 serde = { version = "1.0.196", features = ["derive"] }

@@ -198,7 +198,7 @@ class CodempJoinCommand(sublime_plugin.WindowCommand):
 #############################################################################
 class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id):
-        tm.dispatch(client.join_workspace(workspace_id, "sublime3"))
+        tm.dispatch(client.join_workspace(workspace_id))
 
     def input_description(self):
         return "Join specific workspace"
