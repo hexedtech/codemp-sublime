@@ -1,3 +1,5 @@
+# pyright: reportIncompatibleMethodOverride=false
+
 import sublime
 import sublime_plugin
 
@@ -12,7 +14,6 @@ from .src.utils import status_log
 from .src.utils import safe_listener_detach
 from .src.utils import safe_listener_attach
 from .src import globals as g
-from .bindings.codemp import init_logger
 
 TEXT_LISTENER = None
 
@@ -27,7 +28,7 @@ def plugin_loaded():
     # pass in the exit_handler coroutine that will be called upon relasing the event loop.
     tm.acquire(disconnect_client)
 
-    logger = CodempLogger(init_logger(False))
+    logger = CodempLogger()
     tm.dispatch(logger.log(), "codemp-logger")
 
     TEXT_LISTENER = CodempClientTextChangeListener()
@@ -105,18 +106,18 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         g.ACTIVE_CODEMP_VIEW = self.view.id()
         # print("view {} activated".format(self.view.id()))
         global TEXT_LISTENER
-        safe_listener_attach(TEXT_LISTENER, self.view.buffer())
+        safe_listener_attach(TEXT_LISTENER, self.view.buffer())  # pyright: ignore
 
     def on_deactivated(self):
         g.ACTIVE_CODEMP_VIEW = None
         # print("view {} deactivated".format(self.view.id()))
         global TEXT_LISTENER
-        safe_listener_detach(TEXT_LISTENER)
+        safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
 
     def on_pre_close(self):
         global TEXT_LISTENER
         if self.view.id() == g.ACTIVE_CODEMP_VIEW:
-            safe_listener_detach(TEXT_LISTENER)
+            safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
 
         ws = client.get_workspace(self.view)
         if ws is None:
@@ -197,7 +198,7 @@ class CodempJoinCommand(sublime_plugin.WindowCommand):
 # Join Workspace Command
 #############################################################################
 class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
-    def run(self, workspace_id):
+    def run(self, workspace_id):  # pyright: ignore
         tm.dispatch(client.join_workspace(workspace_id))
 
     def input_description(self):
@@ -211,7 +212,7 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
 # Join Buffer Command
 #############################################################################
 class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
-    def run(self, buffer_id):
+    def run(self, buffer_id):  # pyright: ignore
         if client.active_workspace is None:
             sublime.error_message(
                 "You haven't joined any worksapce yet. \
@@ -265,6 +266,7 @@ class ListBufferId(sublime_plugin.ListInputHandler):
         return "buffer_id"
 
     def list_items(self):
+        assert client.active_workspace is not None
         return client.active_workspace.handle.filetree()
 
     def next_input(self, args):

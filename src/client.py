@@ -8,18 +8,21 @@ import tempfile
 import os
 import shutil
 
+from codemp import (
+    init_logger,
+    codemp_init,
+    CodempBufferController,
+    CodempWorkspace,
+    Client,
+)
 from ..src import globals as g
 from ..src.TaskManager import tm
-from ..src.wrappers import BufferController, Workspace, Client
 from ..src.utils import status_log, rowcol_to_region
 
 
 class CodempLogger:
-    def __init__(self, handle):
-        self.handle = handle
-
-    async def message(self):
-        return await self.handle.message()
+    def __init__(self, debug: bool = False):
+        self.handle = init_logger(debug)
 
     async def log(self):
         status_log("spinning up the logger...")
@@ -43,7 +46,7 @@ class VirtualBuffer:
         self,
         workspace: VirtualWorkspace,
         remote_id: str,
-        buffctl: BufferController,
+        buffctl: CodempBufferController,
     ):
         self.view = sublime.active_window().new_file()
         self.codemp_id = remote_id
@@ -106,7 +109,7 @@ class VirtualBuffer:
                         "end": text_change.end_excl,
                         "content": text_change.content,
                         "change_id": self.view.change_id(),
-                    },
+                    },  # pyright: ignore
                 )
 
         except asyncio.CancelledError:
@@ -126,7 +129,9 @@ class VirtualBuffer:
                     region.begin(), region.end(), change.str
                 )
             )
-            self.buffctl.send(region.begin(), region.end()+len(change.str)-1, change.str)
+            self.buffctl.send(
+                region.begin(), region.end() + len(change.str) - 1, change.str
+            )
 
     def send_cursor(self, vws: VirtualWorkspace):
         # TODO: only the last placed cursor/selection.
@@ -141,7 +146,7 @@ class VirtualBuffer:
 # A virtual workspace is a bridge class that aims to translate
 # events that happen to the codemp workspaces into sublime actions
 class VirtualWorkspace:
-    def __init__(self, workspace_id: str, handle: Workspace):
+    def __init__(self, workspace_id: str, handle: CodempWorkspace):
         self.id = workspace_id
         self.sublime_window = sublime.active_window()
         self.handle = handle
@@ -149,8 +154,8 @@ class VirtualWorkspace:
         self.isactive = False
 
         # mapping remote ids -> local ids
-        self.id_map: dict[str, str] = {}
-        self.active_buffers: dict[str, VirtualBuffer] = {}  # local_id -> VBuff
+        self.id_map: dict[str, int] = {}
+        self.active_buffers: dict[int, VirtualBuffer] = {}  # local_id -> VBuff
 
         # initialise the virtual filesystem
         tmpdir = tempfile.mkdtemp(prefix="codemp_")
@@ -158,7 +163,7 @@ class VirtualWorkspace:
         self.rootdir = tmpdir
 
         # and add a new "project folder"
-        proj_data = self.sublime_window.project_data()
+        proj_data: dict = self.sublime_window.project_data()  # pyright: ignore
         if proj_data is None:
             proj_data = {"folders": []}
 
@@ -167,7 +172,7 @@ class VirtualWorkspace:
         )
         self.sublime_window.set_project_data(proj_data)
 
-        s: dict = self.sublime_window.settings()
+        s: dict = self.sublime_window.settings()  # pyright: ignore
         if s.get(g.CODEMP_WINDOW_TAG, False):
             s[g.CODEMP_WINDOW_WORKSPACES].append(self.id)
         else:
@@ -184,7 +189,7 @@ class VirtualWorkspace:
 
         self.active_buffers = {}  # drop all buffers, let them be garbace collected (hopefully)
 
-        d = self.sublime_window.project_data()
+        d: dict = self.sublime_window.project_data()  # pyright: ignore
         newf = list(
             filter(
                 lambda f: f.get("name", "") != f"{g.WORKSPACE_FOLDER_PREFIX}{self.id}",
@@ -216,7 +221,7 @@ class VirtualWorkspace:
         self.id_map[remote_id] = vbuff.view.buffer_id()
         self.active_buffers[vbuff.view.buffer_id()] = vbuff
 
-    def get_by_local(self, local_id: str) -> Optional[VirtualBuffer]:
+    def get_by_local(self, local_id: int) -> Optional[VirtualBuffer]:
         return self.active_buffers.get(local_id)
 
     def get_by_remote(self, remote_id: str) -> Optional[VirtualBuffer]:
@@ -290,7 +295,7 @@ class VirtualWorkspace:
 
 class VirtualClient:
     def __init__(self):
-        self.handle: Client = Client()
+        self.handle: Client = codemp_init()
         self.workspaces: dict[str, VirtualWorkspace] = {}
         self.active_workspace: Optional[VirtualWorkspace] = None
 
@@ -341,7 +346,10 @@ class VirtualClient:
         status_log(f"Connected to '{server_host}' with user id: {id}")
 
     async def join_workspace(
-        self, workspace_id: str, user=f"user-{random.random()}", password="lmaodefaultpassword"
+        self,
+        workspace_id: str,
+        user=f"user-{random.random()}",
+        password="lmaodefaultpassword",
     ) -> Optional[VirtualWorkspace]:
         try:
             status_log(f"Logging into workspace: '{workspace_id}' with user: {user}")
