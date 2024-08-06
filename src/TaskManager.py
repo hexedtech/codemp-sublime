@@ -40,15 +40,15 @@ class TaskManager:
 
         return _store
 
-    def get_task(self, name) -> Optional:
+    def get_task(self, name) -> Optional[asyncio.Task]:
         return next((t for t in self.tasks if t.get_name() == name), None)
 
-    def get_task_idx(self, name) -> Optional:
+    def get_task_idx(self, name) -> Optional[int]:
         return next(
             (i for (i, t) in enumerate(self.tasks) if t.get_name() == name), None
         )
 
-    def pop_task(self, name) -> Optional:
+    def pop_task(self, name) -> Optional[asyncio.Task]:
         idx = self.get_task_idx(name)
         if id is not None:
             return self.tasks.pop(idx)
