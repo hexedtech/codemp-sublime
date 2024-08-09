@@ -9,12 +9,12 @@ import os
 import shutil
 
 from codemp import (
-    init_logger,
-    codemp_init,
-    CodempBufferController,
-    CodempWorkspace,
+    BufferController,
+    Workspace,
     Client,
+    PyLogger,
 )
+from sublime_plugin import attach_buffer
 from ..src import globals as g
 from ..src.TaskManager import tm
 from ..src.utils import status_log, rowcol_to_region
@@ -22,12 +22,15 @@ from ..src.utils import status_log, rowcol_to_region
 
 class CodempLogger:
     def __init__(self, debug: bool = False):
-        self.handle = init_logger(debug)
+        try:
+            self.handle = PyLogger(debug)
+        except Exception:
+            pass
 
     async def log(self):
         status_log("spinning up the logger...")
         try:
-            while msg := await self.handle.message():
+            while msg := await self.handle.listen():
                 print(msg)
         except asyncio.CancelledError:
             status_log("stopping logger")
@@ -46,7 +49,7 @@ class VirtualBuffer:
         self,
         workspace: VirtualWorkspace,
         remote_id: str,
-        buffctl: CodempBufferController,
+        buffctl: BufferController,
     ):
         self.view = sublime.active_window().new_file()
         self.codemp_id = remote_id
@@ -90,6 +93,7 @@ class VirtualBuffer:
         status_log(f"spinning up '{self.codemp_id}' buffer worker...")
         try:
             while text_change := await self.buffctl.recv():
+                change_id = self.view.change_id()
                 if text_change.is_empty():
                     status_log("change is empty. skipping.")
                     continue
@@ -105,10 +109,10 @@ class VirtualBuffer:
                 self.view.run_command(
                     "codemp_replace_text",
                     {
-                        "start": text_change.start_incl,
-                        "end": text_change.end_excl,
+                        "start": text_change.start,
+                        "end": text_change.end,
                         "content": text_change.content,
-                        "change_id": self.view.change_id(),
+                        "change_id": change_id,
                     },  # pyright: ignore
                 )
 
@@ -129,9 +133,7 @@ class VirtualBuffer:
                     region.begin(), region.end(), change.str
                 )
             )
-            self.buffctl.send(
-                region.begin(), region.end() + len(change.str) - 1, change.str
-            )
+            self.buffctl.send(region.begin(), region.end(), change.str)
 
     def send_cursor(self, vws: VirtualWorkspace):
         # TODO: only the last placed cursor/selection.
@@ -146,10 +148,10 @@ class VirtualBuffer:
 # A virtual workspace is a bridge class that aims to translate
 # events that happen to the codemp workspaces into sublime actions
 class VirtualWorkspace:
-    def __init__(self, workspace_id: str, handle: CodempWorkspace):
-        self.id = workspace_id
-        self.sublime_window = sublime.active_window()
+    def __init__(self, handle: Workspace):
         self.handle = handle
+        self.id = self.handle.id()
+        self.sublime_window = sublime.active_window()
         self.curctl = handle.cursor()
         self.isactive = False
 
@@ -201,6 +203,8 @@ class VirtualWorkspace:
         status_log(f"cleaning up virtual workspace '{self.id}'")
         shutil.rmtree(self.rootdir, ignore_errors=True)
 
+        self.curctl.stop()
+
         s = self.sublime_window.settings()
         del s[g.CODEMP_WINDOW_TAG]
         del s[g.CODEMP_WINDOW_WORKSPACES]
@@ -232,29 +236,49 @@ class VirtualWorkspace:
         vbuff = self.active_buffers.get(local_id)
         if vbuff is None:
             status_log(
-                "[WARN] a local-remote buffer id pair was found but not the matching virtual buffer."
+                "[WARN] a local-remote buffer id pair was found but \
+                not the matching virtual buffer."
             )
             return
 
         return vbuff
 
+    # A workspace has some buffers inside of it (filetree)
+    # some of those you are already attached to (buffers_by_name)
+    # If already attached to it return the same alredy existing bufferctl
+    # if existing but not attached (attach)
+    # if not existing ask for creation (create + attach)
     async def attach(self, id: str):
         if id is None:
             return
 
+        attached_buffers = self.handle.buffer_by_name(id)
+        if attached_buffers is not None:
+            return self.get_by_remote(id)
+
         await self.handle.fetch_buffers()
         existing_buffers = self.handle.filetree()
         if id not in existing_buffers:
-            try:
-                await self.handle.create(id)
-            except Exception as e:
-                status_log(f"could not create buffer: {e}")
+            create = sublime.ok_cancel_dialog(
+                "There is no buffer named '{id}' in the workspace.\n\
+                Do you want to create it?",
+                ok_title="yes",
+                title="Create Buffer?",
+            )
+            if create:
+                try:
+                    await self.handle.create(id)
+                except Exception as e:
+                    status_log(f"could not create buffer:\n\n {e}", True)
+                    return
+            else:
                 return
 
+        # now either we created it or it exists already
         try:
             buff_ctl = await self.handle.attach(id)
         except Exception as e:
-            status_log(f"error when attaching to buffer '{id}': {e}")
+            status_log(f"error when attaching to buffer '{id}':\n\n {e}", True)
             return
 
         vbuff = VirtualBuffer(self, id, buff_ctl)
@@ -262,6 +286,59 @@ class VirtualWorkspace:
 
         # TODO! if the view is already active calling focus_view() will not trigger the on_activate
         self.sublime_window.focus_view(vbuff.view)
+
+    def detach(self, id: str):
+        if id is None:
+            return
+
+        attached_buffers = self.handle.buffer_by_name(id)
+        if attached_buffers is None:
+            status_log(f"You are not attached to the buffer '{id}'", True)
+            return
+
+        self.handle.detach(id)
+
+    async def delete(self, id: str):
+        if id is None:
+            return
+
+        # delete a non existent buffer
+        await self.handle.fetch_buffers()
+        existing_buffers = self.handle.filetree()
+        if id not in existing_buffers:
+            status_log(f"The buffer '{id}' does not exists.", True)
+            return
+        # delete a buffer that exists but you are not attached to
+        attached_buffers = self.handle.buffer_by_name(id)
+        if attached_buffers is None:
+            delete = sublime.ok_cancel_dialog(
+                "Confirm you want to delete the buffer '{id}'",
+                ok_title="delete",
+                title="Delete Buffer?",
+            )
+            if delete:
+                try:
+                    await self.handle.delete(id)
+                except Exception as e:
+                    status_log(f"error when deleting the buffer '{id}':\n\n {e}", True)
+                    return
+            else:
+                return
+
+        # delete buffer that you are attached to
+        delete = sublime.ok_cancel_dialog(
+            "Confirm you want to delete the buffer '{id}'.\n\
+            You will be disconnected from it.",
+            ok_title="delete",
+            title="Delete Buffer?",
+        )
+        if delete:
+            self.detach(id)
+            try:
+                await self.handle.delete(id)
+            except Exception as e:
+                status_log(f"error when deleting the buffer '{id}':\n\n {e}", True)
+                return
 
     async def move_cursor_task(self):
         status_log(f"spinning up cursor worker for workspace '{self.id}'...")
@@ -295,12 +372,56 @@ class VirtualWorkspace:
 
 class VirtualClient:
     def __init__(self):
-        self.handle: Client = codemp_init()
+        self.handle = None
         self.workspaces: dict[str, VirtualWorkspace] = {}
         self.active_workspace: Optional[VirtualWorkspace] = None
 
     def __getitem__(self, key: str):
         return self.workspaces.get(key)
+
+    def connect(self, host: str, user: str, password: str):
+        status_log(f"Connecting to {host} with user {user}")
+        try:
+            self.handle = Client(host, user, password)
+        except Exception as e:
+            sublime.error_message(
+                f"Could not connect:\n Make sure the server is up.\n\
+                or your credentials are correct\n\nerror: {e}"
+            )
+            return
+
+        id = self.handle.user_id()
+        status_log(f"Connected to '{host}' with user {user} and id: {id}")
+
+    async def join_workspace(
+        self,
+        workspace_id: str,
+    ) -> Optional[VirtualWorkspace]:
+        if self.handle is None:
+            status_log("Connect to a server first!", True)
+            return
+
+        status_log(f"Joining workspace: '{workspace_id}'")
+        try:
+            workspace = await self.handle.join_workspace(workspace_id)
+        except Exception as e:
+            status_log(
+                f"Could not join workspace '{workspace_id}'.\n\nerror: {e}", True
+            )
+            return
+
+        vws = VirtualWorkspace(workspace)
+        self.workspaces[workspace_id] = vws
+        self.make_active(vws)
+
+        return vws
+
+    def leave_workspace(self, id: str):
+        if self.handle is None:
+            status_log("Connect to a server first!", True)
+            return False
+        status_log(f"Leaving workspace: '{id}'")
+        return self.handle.leave_workspace(id)
 
     def get_workspace(self, view):
         tag_id = view.settings().get(g.CODEMP_WORKSPACE_ID)
@@ -315,6 +436,12 @@ class VirtualClient:
             return
 
         return ws
+
+    def active_workspaces(self):
+        return self.handle.active_workspaces() if self.handle else []
+
+    def user_id(self):
+        return self.handle.user_id() if self.handle else None
 
     def get_buffer(self, view):
         ws = self.get_workspace(view)
@@ -331,47 +458,6 @@ class VirtualClient:
             ws.activate()
 
         self.active_workspace = ws
-
-    async def connect(self, server_host: str):
-        status_log(f"Connecting to {server_host}")
-        try:
-            await self.handle.connect(server_host)
-        except Exception as e:
-            sublime.error_message(
-                f"Could not connect:\n Make sure the server is up.\nerror: {e}"
-            )
-            return
-
-        id = await self.handle.user_id()
-        status_log(f"Connected to '{server_host}' with user id: {id}")
-
-    async def join_workspace(
-        self,
-        workspace_id: str,
-        user=f"user-{random.random()}",
-        password="lmaodefaultpassword",
-    ) -> Optional[VirtualWorkspace]:
-        try:
-            status_log(f"Logging into workspace: '{workspace_id}' with user: {user}")
-            await self.handle.login(user, password, workspace_id)
-        except Exception as e:
-            status_log(
-                f"Failed to login to workspace '{workspace_id}'.\nerror: {e}", True
-            )
-            return
-
-        try:
-            status_log(f"Joining workspace: '{workspace_id}'")
-            workspace_handle = await self.handle.join_workspace(workspace_id)
-        except Exception as e:
-            status_log(f"Could not join workspace '{workspace_id}'.\nerror: {e}", True)
-            return
-
-        vws = VirtualWorkspace(workspace_id, workspace_handle)
-        self.workspaces[workspace_id] = vws
-        self.make_active(vws)
-
-        return vws
 
 
 client = VirtualClient()

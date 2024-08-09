@@ -2,6 +2,7 @@
 
 import sublime
 import sublime_plugin
+import random
 
 # import os
 # import sys
@@ -14,6 +15,7 @@ from .src.utils import status_log
 from .src.utils import safe_listener_detach
 from .src.utils import safe_listener_attach
 from .src import globals as g
+
 
 TEXT_LISTENER = None
 
@@ -29,6 +31,7 @@ def plugin_loaded():
     tm.acquire(disconnect_client)
 
     logger = CodempLogger()
+
     tm.dispatch(logger.log(), "codemp-logger")
 
     TEXT_LISTENER = CodempClientTextChangeListener()
@@ -154,6 +157,8 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 #                           and buffer id
 #   codemp_join_workspace:  joins a specific workspace, without joining also a buffer
 #   codemp_join_buffer:     joins a specific buffer within the current active workspace
+
+
 #   codemp_share:           ??? todo!()
 #   codemp_disconnect:      manually call the disconnection, triggering the cleanup and dropping
 #                           the connection
@@ -164,21 +169,48 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 # Connect Command
 #############################################################################
 class CodempConnectCommand(sublime_plugin.WindowCommand):
-    def run(self, server_host):
-        tm.dispatch(client.connect(server_host))
+    def run(self, server_host, user_name, password="lmaodefaultpassword"):
+        client.connect(server_host, user_name, password)
 
     def input(self, args):
         if "server_host" not in args:
-            return ServerHost()
+            return ConnectServerHost()
 
     def input_description(self):
         return "Server host:"
 
 
+class ConnectServerHost(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "server_host"
+
+    def initial_text(self):
+        return "http://127.0.0.1:50051"
+
+    def next_input(self, args):
+        if "user_name" not in args:
+            return ConnectUserName()
+
+
+class ConnectUserName(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "user_name"
+
+    def initial_text(self):
+        return f"user-{random.random()}"
+
+
 # Generic Join Command
 #############################################################################
 async def JoinCommand(client: VirtualClient, workspace_id: str, buffer_id: str):
+    if workspace_id is None:
+        return
+
     vws = await client.join_workspace(workspace_id)
+
+    if buffer_id is None:
+        return
+
     if vws is not None:
         await vws.attach(buffer_id)
 
@@ -193,6 +225,32 @@ class CodempJoinCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "workspace_id" not in args:
             return WorkspaceIdAndFollowup()
+
+
+class WorkspaceIdAndFollowup(sublime_plugin.ListInputHandler):
+    def name(self):
+        return "workspace_id"
+
+    def placeholder(self):
+        return "Workspace Id"
+
+    def list_items(self):
+        return client.active_workspaces()
+
+    def next_input(self, args):
+        if "buffer_id" not in args:
+            return ListBufferId()
+
+
+class ListBufferId(sublime_plugin.ListInputHandler):
+    def name(self):
+        return "buffer_id"
+
+    def placeholder(self):
+        return "Buffer Id"
+
+    def list_items(self):
+        return client.active_workspace.handle.filetree()
 
 
 # Join Workspace Command
@@ -239,7 +297,7 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
             if len(existing_buffers) == 0:
                 return RawBufferId()
             else:
-                return ListBufferId()
+                return ListBufferId2()
 
 
 # Text Change Command
@@ -253,21 +311,15 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 
 # Input Handlers
 ##############################################################################
-class ServerHost(sublime_plugin.TextInputHandler):
-    def name(self):
-        return "server_host"
-
-    def initial_text(self):
-        return "http://127.0.0.1:50051"
 
 
-class ListBufferId(sublime_plugin.ListInputHandler):
+class ListBufferId2(sublime_plugin.ListInputHandler):
     def name(self):
         return "buffer_id"
 
     def list_items(self):
         assert client.active_workspace is not None
-        return client.active_workspace.handle.filetree()
+        return client.active_workspace
 
     def next_input(self, args):
         if "buffer_id" not in args:
@@ -280,18 +332,6 @@ class RawWorkspaceId(sublime_plugin.TextInputHandler):
 
     def placeholder(self):
         return "Workspace Id"
-
-
-class WorkspaceIdAndFollowup(sublime_plugin.TextInputHandler):
-    def name(self):
-        return "workspace_id"
-
-    def placeholder(self):
-        return "Workspace Id"
-
-    def next_input(self, args):
-        if "buffer_id" not in args:
-            return RawBufferId()
 
 
 class RawBufferId(sublime_plugin.TextInputHandler):
