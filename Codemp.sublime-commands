@@ -45,18 +45,11 @@
   	}
   },
   {
-    "caption": "Codemp: Join Workspace",
-    "command": "codemp_join_workspace",
+    "caption": "Codemp: Leave Workspace",
+    "command": "codemp_leave_workspace",
     "arg": {
-      // 'workspace_id' : 'asd'
-    },
-  },
-  {
-    "caption": "Codemp: Join buffer",
-    "command": "codemp_join_buffer",
-    "arg": {
-      // 'buffer_id' : 'test'
-    },
+      // "id": 'lmaaaao'
+    }
   },
   {
     "caption": "Codemp: Disconnect Client",
