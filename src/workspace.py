@@ -10,7 +10,7 @@ from codemp import Workspace
 
 from Codemp.src import globals as g
 from Codemp.src.buffers import VirtualBuffer
-from Codemp.src.task_manager import tm
+from Codemp.src.task_manager import rt
 from Codemp.src.utils import rowcol_to_region
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class VirtualWorkspace:
         self.materialized = True
 
     def activate(self):
-        tm.dispatch(
+        rt.dispatch(
             self.move_cursor_task(),
             f"{g.CURCTL_TASK_PREFIX}-{self.id}",
         )
@@ -103,7 +103,7 @@ class VirtualWorkspace:
 
     def deactivate(self):
         if self.isactive:
-            tm.stop(f"{g.CURCTL_TASK_PREFIX}-{self.id}")
+            rt.stop_task(f"{g.CURCTL_TASK_PREFIX}-{self.id}")
 
         self.isactive = False
 

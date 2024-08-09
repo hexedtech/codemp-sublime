@@ -5,7 +5,7 @@ import sublime_plugin
 import logging
 import random
 
-from Codemp.src.task_manager import tm
+from Codemp.src.task_manager import rt
 from Codemp.src.client import client, VirtualClient
 from Codemp.src.logger import inner_logger
 from Codemp.src.utils import safe_listener_detach
@@ -37,18 +37,19 @@ def plugin_loaded():
 
     # instantiate and start a global asyncio event loop.
     # pass in the exit_handler coroutine that will be called upon relasing the event loop.
-    tm.acquire(disconnect_client)
-    tm.dispatch(inner_logger.listen(), "codemp-logger")
+    # tm.acquire(disconnect_client)
+    rt.start()
+    rt.dispatch(inner_logger.listen(), "codemp-logger")
 
     TEXT_LISTENER = CodempClientTextChangeListener()
 
     logger.debug("plugin loaded")
 
 
-async def disconnect_client():
+def disconnect_client():
     global TEXT_LISTENER
 
-    tm.stop_all()
+    # rt.stop_all()
 
     if TEXT_LISTENER is not None:
         safe_listener_detach(TEXT_LISTENER)
@@ -63,14 +64,17 @@ def plugin_unloaded():
     # releasing the runtime, runs the disconnect callback defined when acquiring the event loop.
     logger.debug("unloading")
     package_logger.removeHandler(handler)
-    tm.release(False)
+    disconnect_client()
+    rt.stop_loop()
+
+    # tm.release(False)
 
 
 # Listeners
 ##############################################################################
 class EventListener(sublime_plugin.EventListener):
     def on_exit(self):
-        tm.release(True)
+        disconnect_client()
 
     def on_pre_close_window(self, window):
         if client.active_workspace is None:
@@ -244,7 +248,7 @@ class CodempJoinCommand(sublime_plugin.WindowCommand):
         print(workspace_id, buffer_id)
         if buffer_id == "* Don't Join Any":
             buffer_id = ""
-        tm.dispatch(JoinCommand(client, workspace_id, buffer_id))
+        rt.dispatch(JoinCommand(client, workspace_id, buffer_id))
 
     def is_enabled(self) -> bool:
         return client.handle is not None
@@ -286,7 +290,7 @@ class JoinWorkspaceIdList(sublime_plugin.ListInputHandler):
 
         wid = args["workspace_id"]
         if wid != "":
-            vws = tm.sync(client.join_workspace(wid))
+            vws = rt.block_on(client.join_workspace(wid))
         else:
             vws = None
         try:
@@ -384,7 +388,7 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
             return False
 
     def run(self):
-        tm.sync(disconnect_client())
+        disconnect_client()
 
 
 # Leave Workspace Command
