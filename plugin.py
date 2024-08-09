@@ -4,17 +4,13 @@ import sublime
 import sublime_plugin
 import random
 
-# import os
-# import sys
-# import importlib.util
-
-from .src.TaskManager import tm
-from .src.client import logger, client, VirtualClient
-from .src.utils import status_log
-from .src.utils import safe_listener_detach
-from .src.utils import safe_listener_attach
-from .src import globals as g
-
+from Codemp.src.task_manager import tm
+from Codemp.src.client import client, VirtualClient
+from Codemp.src.logger import logger
+from Codemp.src.utils import status_log
+from Codemp.src.utils import safe_listener_detach
+from Codemp.src.utils import safe_listener_attach
+from Codemp.src import globals as g
 
 TEXT_LISTENER = None
 
@@ -216,8 +212,12 @@ async def JoinCommand(client: VirtualClient, workspace_id: str, buffer_id: str):
 
     vws = client.workspaces.get(workspace_id)
     if vws is None:
-        vws = await client.join_workspace(workspace_id)
+        try:
+            vws = await client.join_workspace(workspace_id)
+        except Exception as e:
+            raise e
 
+    assert vws is not None
     vws.materialize()
 
     if buffer_id != "":
