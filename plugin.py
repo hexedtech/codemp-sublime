@@ -2,33 +2,47 @@
 
 import sublime
 import sublime_plugin
+import logging
 import random
 
 from Codemp.src.task_manager import tm
 from Codemp.src.client import client, VirtualClient
-from Codemp.src.logger import logger
-from Codemp.src.utils import status_log
+from Codemp.src.logger import inner_logger
 from Codemp.src.utils import safe_listener_detach
 from Codemp.src.utils import safe_listener_attach
 from Codemp.src import globals as g
 
+LOG_LEVEL = logging.DEBUG
+handler = logging.StreamHandler()
+handler.setFormatter(
+    logging.Formatter(
+        fmt="<{thread}/{threadName}>[codemp] [{name} :: {funcName}] {levelname}: {message}",
+        style="{",
+    )
+)
+package_logger = logging.getLogger(__package__)
+package_logger.addHandler(handler)
+package_logger.setLevel(LOG_LEVEL)
+package_logger.propagate = False
+
+logger = logging.getLogger(__name__)
+
 TEXT_LISTENER = None
+
 
 # Initialisation and Deinitialisation
 ##############################################################################
-
-
 def plugin_loaded():
     global TEXT_LISTENER
 
     # instantiate and start a global asyncio event loop.
     # pass in the exit_handler coroutine that will be called upon relasing the event loop.
     tm.acquire(disconnect_client)
-    tm.dispatch(logger.log(), "codemp-logger")
+    tm.dispatch(inner_logger.listen(), "codemp-logger")
 
     TEXT_LISTENER = CodempClientTextChangeListener()
 
-    status_log("plugin loaded")
+    logger.debug("plugin loaded")
 
 
 async def disconnect_client():
@@ -47,7 +61,8 @@ async def disconnect_client():
 
 def plugin_unloaded():
     # releasing the runtime, runs the disconnect callback defined when acquiring the event loop.
-    status_log("unloading")
+    logger.debug("unloading")
+    package_logger.removeHandler(handler)
     tm.release(False)
 
 
@@ -71,8 +86,8 @@ class EventListener(sublime_plugin.EventListener):
         for wsid in s[g.CODEMP_WINDOW_WORKSPACES]:
             ws = client[wsid]
             if ws is None:
-                status_log(
-                    "[WARN] a tag on the window was found but not a matching workspace."
+                logger.warning(
+                    "a tag on the window was found but not a matching workspace."
                 )
                 continue
 
@@ -137,7 +152,7 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
     def on_text_changed(self, changes):
         s = self.buffer.primary_view().settings()
         if s.get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, None):
-            status_log("Ignoring echoing back the change.")
+            logger.debug("Ignoring echoing back the change.")
             s[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
             return
 

@@ -1,14 +1,13 @@
 import sublime
 import os
+import logging
 from asyncio import CancelledError
 
-
 from codemp import BufferController
-from Codemp.src.workspace import VirtualWorkspace
 from Codemp.src import globals as g
-
 from Codemp.src.task_manager import tm
-from Codemp.src.utils import status_log
+
+logger = logging.getLogger(__name__)
 
 
 # This class is used as an abstraction between the local buffers (sublime side) and the
@@ -18,18 +17,19 @@ from Codemp.src.utils import status_log
 class VirtualBuffer:
     def __init__(
         self,
-        workspace: VirtualWorkspace,
+        workspace_id: str,
+        workspace_rootdir: str,
         remote_id: str,
         buffctl: BufferController,
     ):
         self.view = sublime.active_window().new_file()
         self.codemp_id = remote_id
         self.sublime_id = self.view.buffer_id()
-
-        self.workspace = workspace
+        self.workspace_id = workspace_id
+        self.workspace_rootdir = workspace_rootdir
         self.buffctl = buffctl
 
-        self.tmpfile = os.path.join(workspace.rootdir, self.codemp_id)
+        self.tmpfile = os.path.join(workspace_rootdir, self.codemp_id)
 
         self.view.set_name(self.codemp_id)
         open(self.tmpfile, "a").close()
@@ -46,7 +46,7 @@ class VirtualBuffer:
         self.view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
         s[g.CODEMP_BUFFER_TAG] = True
         s[g.CODEMP_REMOTE_ID] = self.codemp_id
-        s[g.CODEMP_WORKSPACE_ID] = self.workspace.id
+        s[g.CODEMP_WORKSPACE_ID] = self.workspace_id
 
     def cleanup(self):
         os.remove(self.tmpfile)
@@ -58,15 +58,15 @@ class VirtualBuffer:
         self.view.erase_status(g.SUBLIME_STATUS_ID)
 
         tm.stop(f"{g.BUFFCTL_TASK_PREFIX}-{self.codemp_id}")
-        status_log(f"cleaning up virtual buffer '{self.codemp_id}'")
+        logger.info(f"cleaning up virtual buffer '{self.codemp_id}'")
 
     async def apply_bufferchange_task(self):
-        status_log(f"spinning up '{self.codemp_id}' buffer worker...")
+        logger.debug(f"spinning up '{self.codemp_id}' buffer worker...")
         try:
             while text_change := await self.buffctl.recv():
                 change_id = self.view.change_id()
                 if text_change.is_empty():
-                    status_log("change is empty. skipping.")
+                    logger.debug("change is empty. skipping.")
                     continue
                 # In case a change arrives to a background buffer, just apply it.
                 # We are not listening on it. Otherwise, interrupt the listening
@@ -88,10 +88,10 @@ class VirtualBuffer:
                 )
 
         except CancelledError:
-            status_log(f"'{self.codemp_id}' buffer worker stopped...")
+            logger.debug(f"'{self.codemp_id}' buffer worker stopped...")
             raise
         except Exception as e:
-            status_log(f"buffer worker '{self.codemp_id}' crashed:\n{e}")
+            logger.error(f"buffer worker '{self.codemp_id}' crashed:\n{e}")
             raise
 
     def send_buffer_change(self, changes):
@@ -99,14 +99,14 @@ class VirtualBuffer:
         # sequential indexing, assuming the changes are applied in the order they are received.
         for change in changes:
             region = sublime.Region(change.a.pt, change.b.pt)
-            status_log(
+            logger.debug(
                 "sending txt change: Reg({} {}) -> '{}'".format(
                     region.begin(), region.end(), change.str
                 )
             )
             self.buffctl.send(region.begin(), region.end(), change.str)
 
-    def send_cursor(self, vws: VirtualWorkspace):
+    def send_cursor(self, vws):  # pyright: ignore  # noqa: F821
         # TODO: only the last placed cursor/selection.
         # status_log(f"sending cursor position in workspace: {vbuff.workspace.id}")
         region = self.view.sel()[0]
