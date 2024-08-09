@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Optional
 
 import sublime
-import random
 import asyncio
 import tempfile
 import os
@@ -160,11 +159,51 @@ class VirtualWorkspace:
         self.id = self.handle.id()
         self.sublime_window = sublime.active_window()
         self.curctl = handle.cursor()
+        self.materialized = False
         self.isactive = False
 
         # mapping remote ids -> local ids
         self.id_map: dict[str, int] = {}
         self.active_buffers: dict[int, VirtualBuffer] = {}  # local_id -> VBuff
+
+    def cleanup(self):
+        self.deactivate()
+
+        # the worskpace only cares about closing the various open views on its buffers.
+        # the event listener calls the cleanup code for each buffer independently on its own.
+        for vbuff in self.active_buffers.values():
+            vbuff.view.close()
+
+        self.active_buffers = {}  # drop all buffers, let them be garbace collected (hopefully)
+
+        if not self.materialized:
+            return  # nothing to delete
+
+        d: dict = self.sublime_window.project_data()  # pyright: ignore
+        newf = list(
+            filter(
+                lambda f: f.get("name", "") != f"{g.WORKSPACE_FOLDER_PREFIX}{self.id}",
+                d["folders"],
+            )
+        )
+        d["folders"] = newf
+        self.sublime_window.set_project_data(d)
+        status_log(f"cleaning up virtual workspace '{self.id}'")
+        shutil.rmtree(self.rootdir, ignore_errors=True)
+
+        self.curctl.stop()
+
+        s = self.sublime_window.settings()
+        del s[g.CODEMP_WINDOW_TAG]
+        del s[g.CODEMP_WINDOW_WORKSPACES]
+
+        self.materialized = False
+
+    def materialize(self):
+        # attach the workspace to the editor, tagging windows and populating
+        # virtual file systems
+        if self.materialized:
+            return  # no op, we already are in the editor
 
         # initialise the virtual filesystem
         tmpdir = tempfile.mkdtemp(prefix="codemp_")
@@ -188,33 +227,7 @@ class VirtualWorkspace:
             s[g.CODEMP_WINDOW_TAG] = True
             s[g.CODEMP_WINDOW_WORKSPACES] = [self.id]
 
-    def cleanup(self):
-        self.deactivate()
-
-        # the worskpace only cares about closing the various open views on its buffers.
-        # the event listener calls the cleanup code for each buffer independently on its own.
-        for vbuff in self.active_buffers.values():
-            vbuff.view.close()
-
-        self.active_buffers = {}  # drop all buffers, let them be garbace collected (hopefully)
-
-        d: dict = self.sublime_window.project_data()  # pyright: ignore
-        newf = list(
-            filter(
-                lambda f: f.get("name", "") != f"{g.WORKSPACE_FOLDER_PREFIX}{self.id}",
-                d["folders"],
-            )
-        )
-        d["folders"] = newf
-        self.sublime_window.set_project_data(d)
-        status_log(f"cleaning up virtual workspace '{self.id}'")
-        shutil.rmtree(self.rootdir, ignore_errors=True)
-
-        self.curctl.stop()
-
-        s = self.sublime_window.settings()
-        del s[g.CODEMP_WINDOW_TAG]
-        del s[g.CODEMP_WINDOW_WORKSPACES]
+        self.materialized = True
 
     def activate(self):
         tm.dispatch(
@@ -226,6 +239,7 @@ class VirtualWorkspace:
     def deactivate(self):
         if self.isactive:
             tm.stop(f"{g.CURCTL_TASK_PREFIX}-{self.id}")
+
         self.isactive = False
 
     def add_buffer(self, remote_id: str, vbuff: VirtualBuffer):
@@ -419,7 +433,7 @@ class VirtualClient:
 
         vws = VirtualWorkspace(workspace)
         self.workspaces[workspace_id] = vws
-        self.make_active(vws)
+        # self.make_active(vws)
 
         return vws
 
@@ -428,7 +442,9 @@ class VirtualClient:
             status_log("Connect to a server first!", True)
             return False
         status_log(f"Leaving workspace: '{id}'")
-        return self.handle.leave_workspace(id)
+        if self.handle.leave_workspace(id):
+            self.workspaces[id].cleanup()
+            del self.workspaces[id]
 
     def get_workspace(self, view):
         tag_id = view.settings().get(g.CODEMP_WORKSPACE_ID)
