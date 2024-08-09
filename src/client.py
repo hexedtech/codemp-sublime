@@ -22,18 +22,25 @@ from ..src.utils import status_log, rowcol_to_region
 
 class CodempLogger:
     def __init__(self, debug: bool = False):
+        self.handle = None
+        self.started = False
         try:
             self.handle = PyLogger(debug)
         except Exception:
             pass
 
     async def log(self):
+        if self.started:
+            return
+
+        self.started = True
         status_log("spinning up the logger...")
         try:
             while msg := await self.handle.listen():
                 print(msg)
         except asyncio.CancelledError:
             status_log("stopping logger")
+            self.started = False
             raise
         except Exception as e:
             status_log(f"logger crashed unexpectedly:\n{e}")
@@ -460,4 +467,7 @@ class VirtualClient:
         self.active_workspace = ws
 
 
+DEBUG = False
+logger = CodempLogger(DEBUG)
+logger.log()
 client = VirtualClient()
