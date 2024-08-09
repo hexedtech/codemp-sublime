@@ -18,12 +18,13 @@ class TaskManager:
 
     def release(self, at_exit):
         self.runtime.release(at_exit=at_exit, exit_handler_id=self.exit_handler_id)
+        self.exit_handler_id = None
 
     def dispatch(self, coro, name=None):
         self.runtime.dispatch(coro, self.store_named_lambda(name))
 
     def sync(self, coro):
-        self.runtime.sync(coro)
+        return self.runtime.sync(coro)
 
     def remove_stopped(self):
         self.tasks = list(filter(lambda T: not T.cancelled(), self.tasks))
