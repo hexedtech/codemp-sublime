@@ -5,7 +5,7 @@ from asyncio import CancelledError
 
 from codemp import BufferController
 from Codemp.src import globals as g
-from Codemp.src.task_manager import tm
+from Codemp.src.task_manager import rt
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class VirtualBuffer:
         self.view.retarget(self.tmpfile)
         self.view.set_scratch(True)
 
-        tm.dispatch(
+        rt.dispatch(
             self.apply_bufferchange_task(),
             f"{g.BUFFCTL_TASK_PREFIX}-{self.codemp_id}",
         )
@@ -57,7 +57,7 @@ class VirtualBuffer:
         del s[g.CODEMP_WORKSPACE_ID]
         self.view.erase_status(g.SUBLIME_STATUS_ID)
 
-        tm.stop(f"{g.BUFFCTL_TASK_PREFIX}-{self.codemp_id}")
+        rt.stop_task(f"{g.BUFFCTL_TASK_PREFIX}-{self.codemp_id}")
         logger.info(f"cleaning up virtual buffer '{self.codemp_id}'")
 
     async def apply_bufferchange_task(self):
