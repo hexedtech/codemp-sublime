@@ -3,6 +3,7 @@ from __future__ import annotations
 import sublime
 import shutil
 import tempfile
+import logging
 from asyncio import CancelledError
 
 from codemp import Workspace
@@ -10,8 +11,9 @@ from codemp import Workspace
 from Codemp.src import globals as g
 from Codemp.src.buffers import VirtualBuffer
 from Codemp.src.task_manager import tm
-from Codemp.src.utils import status_log
 from Codemp.src.utils import rowcol_to_region
+
+logger = logging.getLogger(__name__)
 
 
 # A virtual workspace is a bridge class that aims to translate
@@ -51,7 +53,7 @@ class VirtualWorkspace:
         )
         d["folders"] = newf
         self.sublime_window.set_project_data(d)
-        status_log(f"cleaning up virtual workspace '{self.id}'")
+        logger.info(f"cleaning up virtual workspace '{self.id}'")
         shutil.rmtree(self.rootdir, ignore_errors=True)
 
         self.curctl.stop()
@@ -70,7 +72,7 @@ class VirtualWorkspace:
 
         # initialise the virtual filesystem
         tmpdir = tempfile.mkdtemp(prefix="codemp_")
-        status_log("setting up virtual fs for workspace in: {} ".format(tmpdir))
+        logging.debug("setting up virtual fs for workspace in: {} ".format(tmpdir))
         self.rootdir = tmpdir
 
         # and add a new "project folder"
@@ -119,8 +121,8 @@ class VirtualWorkspace:
 
         vbuff = self.active_Buffer.get(local_id)
         if vbuff is None:
-            status_log(
-                "[WARN] a local-remote buffer id pair was found but \
+            logging.warning(
+                "a local-remote buffer id pair was found but \
                 not the matching virtual buffer."
             )
             return
@@ -153,7 +155,7 @@ class VirtualWorkspace:
                 try:
                     await self.handle.create(id)
                 except Exception as e:
-                    status_log(f"could not create buffer:\n\n {e}", True)
+                    logging.error(f"could not create buffer:\n\n {e}", True)
                     return
             else:
                 return
@@ -162,10 +164,10 @@ class VirtualWorkspace:
         try:
             buff_ctl = await self.handle.attach(id)
         except Exception as e:
-            status_log(f"error when attaching to buffer '{id}':\n\n {e}", True)
+            logging.error(f"error when attaching to buffer '{id}':\n\n {e}", True)
             return
 
-        vbuff = Buffer.VirtualBuffer(self, id, buff_ctl)
+        vbuff = VirtualBuffer(self.id, self.rootdir, id, buff_ctl)
         self.add_buffer(id, vbuff)
 
         # TODO! if the view is already active calling focus_view() will not trigger the on_activate
@@ -177,7 +179,7 @@ class VirtualWorkspace:
 
         attached_Buffer = self.handle.buffer_by_name(id)
         if attached_Buffer is None:
-            status_log(f"You are not attached to the buffer '{id}'", True)
+            logging.warning(f"You are not attached to the buffer '{id}'", True)
             return
 
         self.handle.detach(id)
@@ -190,7 +192,7 @@ class VirtualWorkspace:
         await self.handle.fetch_buffers()
         existing_Buffer = self.handle.filetree()
         if id not in existing_Buffer:
-            status_log(f"The buffer '{id}' does not exists.", True)
+            logging.info(f"The buffer '{id}' does not exists.", True)
             return
         # delete a buffer that exists but you are not attached to
         attached_Buffer = self.handle.buffer_by_name(id)
@@ -204,7 +206,9 @@ class VirtualWorkspace:
                 try:
                     await self.handle.delete(id)
                 except Exception as e:
-                    status_log(f"error when deleting the buffer '{id}':\n\n {e}", True)
+                    logging.error(
+                        f"error when deleting the buffer '{id}':\n\n {e}", True
+                    )
                     return
             else:
                 return
@@ -221,11 +225,11 @@ class VirtualWorkspace:
             try:
                 await self.handle.delete(id)
             except Exception as e:
-                status_log(f"error when deleting the buffer '{id}':\n\n {e}", True)
+                logging.error(f"error when deleting the buffer '{id}':\n\n {e}", True)
                 return
 
     async def move_cursor_task(self):
-        status_log(f"spinning up cursor worker for workspace '{self.id}'...")
+        logger.debug(f"spinning up cursor worker for workspace '{self.id}'...")
         try:
             while cursor_event := await self.curctl.recv():
                 vbuff = self.get_by_remote(cursor_event.buffer)
@@ -247,8 +251,8 @@ class VirtualWorkspace:
                 )
 
         except CancelledError:
-            status_log(f"cursor worker for '{self.id}' stopped...")
+            logger.debug(f"cursor worker for '{self.id}' stopped...")
             raise
         except Exception as e:
-            status_log(f"cursor worker '{self.id}' crashed:\n{e}")
+            logger.error(f"cursor worker '{self.id}' crashed:\n{e}")
             raise

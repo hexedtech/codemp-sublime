@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import sublime
+import logging
 
 from codemp import Client
 from Codemp.src import globals as g
 from Codemp.src.workspace import VirtualWorkspace
-from Codemp.src.utils import status_log
+
+logger = logging.getLogger(__name__)
 
 
 class VirtualClient:
@@ -18,47 +20,44 @@ class VirtualClient:
         return self.workspaces.get(key)
 
     def connect(self, host: str, user: str, password: str):
-        status_log(f"Connecting to {host} with user {user}")
+        logger.info(f"Connecting to {host} with user {user}")
         try:
             self.handle = Client(host, user, password)
         except Exception as e:
+            logger.error(f"Could not connect: {e}")
             sublime.error_message(
-                f"Could not connect:\n Make sure the server is up.\n\
-                or your credentials are correct\n\nerror: {e}"
+                "Could not connect:\n Make sure the server is up.\n\
+                or your credentials are correct."
             )
             return
 
         id = self.handle.user_id()
-        status_log(f"Connected to '{host}' with user {user} and id: {id}")
+        logger.debug(f"Connected to '{host}' with user {user} and id: {id}")
 
     async def join_workspace(
         self,
         workspace_id: str,
     ) -> VirtualWorkspace | None:
         if self.handle is None:
-            status_log("Connect to a server first!", True)
             return
 
-        status_log(f"Joining workspace: '{workspace_id}'")
+        logger.info(f"Joining workspace: '{workspace_id}'")
         try:
             workspace = await self.handle.join_workspace(workspace_id)
         except Exception as e:
-            status_log(
-                f"Could not join workspace '{workspace_id}'.\n\nerror: {e}", True
-            )
+            logger.error(f"Could not join workspace '{workspace_id}'.\n\nerror: {e}")
+            sublime.error_message(f"Could not join workspace '{workspace_id}'")
             return
 
         vws = VirtualWorkspace(workspace)
         self.workspaces[workspace_id] = vws
-        # self.make_active(vws)
 
         return vws
 
     def leave_workspace(self, id: str):
         if self.handle is None:
-            status_log("Connect to a server first!", True)
             return False
-        status_log(f"Leaving workspace: '{id}'")
+        logger.info(f"Leaving workspace: '{id}'")
         if self.handle.leave_workspace(id):
             self.workspaces[id].cleanup()
             del self.workspaces[id]
@@ -70,9 +69,7 @@ class VirtualClient:
 
         ws = self.workspaces.get(tag_id)
         if ws is None:
-            status_log(
-                "[WARN] a tag on the view was found but not a matching workspace."
-            )
+            logging.warning("a tag on the view was found but not a matching workspace.")
             return
 
         return ws
