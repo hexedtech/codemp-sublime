@@ -2,12 +2,13 @@ import logging
 from asyncio import CancelledError
 from codemp import PyLogger
 
+logger = logging.getLogger(__name__)
+
 
 class CodempLogger:
     def __init__(self, log_level):
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
         self.level = log_level
-        self.logger.setLevel(self.level)
         self.internal_logger = None
         self.started = False
 
