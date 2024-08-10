@@ -28,6 +28,7 @@ package_logger.propagate = False
 logger = logging.getLogger(__name__)
 
 TEXT_LISTENER = None
+rt.dispatch(inner_logger.listen(), "codemp-logger")
 
 
 # Initialisation and Deinitialisation
@@ -38,8 +39,6 @@ def plugin_loaded():
     # instantiate and start a global asyncio event loop.
     # pass in the exit_handler coroutine that will be called upon relasing the event loop.
     # tm.acquire(disconnect_client)
-    rt.start()
-    rt.dispatch(inner_logger.listen(), "codemp-logger")
 
     TEXT_LISTENER = CodempClientTextChangeListener()
 
