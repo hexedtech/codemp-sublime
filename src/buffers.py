@@ -94,7 +94,7 @@ class VirtualBuffer:
             logger.error(f"buffer worker '{self.codemp_id}' crashed:\n{e}")
             raise
 
-    def send_buffer_change(self, changes):
+    async def send_buffer_change(self, changes):
         # we do not do any index checking, and trust sublime with providing the correct
         # sequential indexing, assuming the changes are applied in the order they are received.
         for change in changes:
@@ -104,7 +104,7 @@ class VirtualBuffer:
                     region.begin(), region.end(), change.str
                 )
             )
-            self.buffctl.send(region.begin(), region.end(), change.str)
+            await self.buffctl.send(region.begin(), region.end(), change.str)
 
     def send_cursor(self, vws):  # pyright: ignore  # noqa: F821
         # TODO: only the last placed cursor/selection.

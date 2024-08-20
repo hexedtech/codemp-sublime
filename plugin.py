@@ -28,7 +28,7 @@ package_logger.propagate = False
 logger = logging.getLogger(__name__)
 
 TEXT_LISTENER = None
-rt.dispatch(inner_logger.listen(), "codemp-logger")
+# rt.dispatch(inner_logger.listen(), "codemp-logger")
 
 
 # Initialisation and Deinitialisation
@@ -48,8 +48,6 @@ def plugin_loaded():
 def disconnect_client():
     global TEXT_LISTENER
 
-    # rt.stop_all()
-
     if TEXT_LISTENER is not None:
         safe_listener_detach(TEXT_LISTENER)
 
@@ -65,8 +63,6 @@ def plugin_unloaded():
     package_logger.removeHandler(handler)
     disconnect_client()
     rt.stop_loop()
-
-    # tm.release(False)
 
 
 # Listeners
@@ -161,7 +157,7 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 
         vbuff = client.get_buffer(self.buffer.primary_view())
         if vbuff is not None:
-            vbuff.send_buffer_change(changes)
+            rt.dispatch(vbuff.send_buffer_change(changes))
 
 
 # Commands:
@@ -235,7 +231,10 @@ async def JoinCommand(client: VirtualClient, workspace_id: str, buffer_id: str):
         except Exception as e:
             raise e
 
-    assert vws is not None
+    if vws is None:
+        logger.warning("The client returned a void workspace.")
+        return
+
     vws.materialize()
 
     if buffer_id != "":
@@ -244,7 +243,6 @@ async def JoinCommand(client: VirtualClient, workspace_id: str, buffer_id: str):
 
 class CodempJoinCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id, buffer_id):
-        print(workspace_id, buffer_id)
         if buffer_id == "* Don't Join Any":
             buffer_id = ""
         rt.dispatch(JoinCommand(client, workspace_id, buffer_id))

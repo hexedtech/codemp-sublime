@@ -246,7 +246,7 @@ class VirtualWorkspace:
                     [reg],
                     flags=reg_flags,
                     scope=g.REGIONS_COLORS[user_hash % len(g.REGIONS_COLORS)],
-                    annotations=[cursor_event.user],
+                    annotations=[cursor_event.user],  # pyright: ignore
                     annotation_color=g.PALETTE[user_hash % len(g.PALETTE)],
                 )
 

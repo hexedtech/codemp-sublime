@@ -31,10 +31,10 @@ class VirtualClient:
             )
             return
 
-        id = self.handle.user_id()
+        id = self.handle.user_id()  # pyright: ignore
         logger.debug(f"Connected to '{host}' with user {user} and id: {id}")
 
-    async def join_workspace(
+    def join_workspace(
         self,
         workspace_id: str,
     ) -> VirtualWorkspace | None:
@@ -43,7 +43,7 @@ class VirtualClient:
 
         logger.info(f"Joining workspace: '{workspace_id}'")
         try:
-            workspace = await self.handle.join_workspace(workspace_id)
+            workspace = self.handle.join_workspace(workspace_id)
         except Exception as e:
             logger.error(f"Could not join workspace '{workspace_id}'.\n\nerror: {e}")
             sublime.error_message(f"Could not join workspace '{workspace_id}'")

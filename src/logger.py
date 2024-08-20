@@ -18,7 +18,8 @@ class CodempLogger:
             # initialize only once
             self.internal_logger = PyLogger(self.level == logging.DEBUG)
         except Exception:
-            pass
+            if self.internal_logger is None:
+                raise
 
     async def listen(self):
         if self.started:
@@ -29,7 +30,11 @@ class CodempLogger:
         assert self.internal_logger is not None
         try:
             while msg := await self.internal_logger.listen():
-                self.logger.log(self.level, msg)
+                if msg is not None:
+                    logger.log(logging.DEBUG, msg)
+                else:
+                    logger.log(logging.DEBUG, "logger sender dropped.")
+                    break
         except CancelledError:
             self.logger.debug("inner logger stopped.")
             self.started = False

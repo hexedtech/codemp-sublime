@@ -1,4 +1,6 @@
 from typing import Optional, Callable, Any
+
+from asyncio.coroutines import functools
 import sublime
 import logging
 import asyncio
@@ -61,38 +63,71 @@ class Runtime:
         self.thread = threading.Thread(
             target=self.loop.run_forever, name="codemp-asyncio-loop"
         )
+        logger.debug("spinning up even loop in its own thread.")
         self.thread.start()
 
     def __del__(self):
-        logger.debug("closing down the event loop")
-        for task in self.tasks:
+        logger.debug("closing down the event loop.")
+        for task in asyncio.all_tasks(self.loop):
             task.cancel()
+
+        self.stop_loop()
 
         try:
             self.loop.run_until_complete(self.loop.shutdown_asyncgens())
         except Exception as e:
             logger.error(f"Unexpected crash while shutting down event loop: {e}")
 
-        self.stop_loop()
         self.thread.join()
 
     def stop_loop(self):
+        logger.debug("stopping event loop.")
         self.loop.call_soon_threadsafe(lambda: asyncio.get_running_loop().stop())
-        self.thread.join()
 
     def run_blocking(self, fut, *args, **kwargs):
         return self.loop.run_in_executor(None, fut, *args, **kwargs)
 
     def dispatch(self, coro, name=None):
-        logging.debug("dispatching coroutine...")
+        """
+        Dispatch a task on the event loop and returns the task itself.
+        Similar to `run_coroutine_threadsafe` but returns the
+        actual task running and not the result of the coroutine.
 
-        def make_task():
-            logging.debug("creating task on the loop.")
-            task = self.loop.create_task(coro)
-            task.set_name(name)
-            self.tasks.append(task)
+        `run_coroutine_threadsafe` returns a concurrent.futures.Future
+        which has a blocking .result so not really suited for long running
+        coroutines
+        """
+        logger.debug("dispatching coroutine...")
 
-        self.loop.call_soon_threadsafe(make_task)
+        def make_task(fut):
+            logger.debug("creating task on the loop.")
+            try:
+                fut.set_result(self.loop.create_task(coro))
+            except Exception as e:
+                fut.set_exception(e)
+
+        # create the future to populate with the task
+        # we use the concurrent.futures.Future since it is thread safe
+        # and the .result() call is blocking.
+        fut = concurrent.futures.Future()
+        self.loop.call_soon_threadsafe(make_task, fut)
+        task = fut.result(None)  # wait for the task to be created
+        task.set_name(name)
+        self.tasks.append(task)  # save the reference
+        return task
+
+    def block_on(self, coro, timeout=None):
+        fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        try:
+            return fut.result(timeout)
+        except asyncio.CancelledError:
+            logger.debug("future got cancelled.")
+            raise
+        except TimeoutError:
+            logger.debug("future took too long to finish.")
+            raise
+        except Exception as e:
+            raise e
 
     def get_task(self, name) -> Optional[asyncio.Task]:
         return next((t for t in self.tasks if t.get_name() == name), None)
@@ -110,76 +145,6 @@ class Runtime:
             return
 
 
-# class TaskManager:
-#     def __init__(self):
-#         self.tasks = []
-#         self.runtime = rt
-#         self.exit_handler_id = None
-
-#     def acquire(self, exit_handler):
-#         if self.exit_handler_id is None:
-#             # don't allow multiple exit handlers
-#             self.exit_handler_id = self.runtime.acquire(exit_handler)
-
-#         return self.exit_handler_id
-
-#     def release(self, at_exit):
-#         self.runtime.release(at_exit=at_exit, exit_handler_id=self.exit_handler_id)
-#         self.exit_handler_id = None
-
-#     def dispatch(self, coro, name=None):
-#         self.runtime.dispatch(coro, self.store_named_lambda(name))
-
-#     def sync(self, coro):
-#         return self.runtime.sync(coro)
-
-#     def remove_stopped(self):
-#         self.tasks = list(filter(lambda T: not T.cancelled(), self.tasks))
-
-#     def store(self, task, name=None):
-#         if name is not None:
-#             task.set_name(name)
-#         self.tasks.append(task)
-#         self.remove_stopped()
-
-#     def store_named_lambda(self, name=None):
-#         def _store(task):
-#             self.store(task, name)
-
-#         return _store
-
-#     def get_task(self, name) -> Optional[asyncio.Task]:
-#         return next((t for t in self.tasks if t.get_name() == name), None)
-
-#     def get_task_idx(self, name) -> Optional[int]:
-#         return next(
-#             (i for (i, t) in enumerate(self.tasks) if t.get_name() == name), None
-#         )
-
-#     def pop_task(self, name) -> Optional[asyncio.Task]:
-#         idx = self.get_task_idx(name)
-#         if id is not None:
-#             return self.tasks.pop(idx)
-#         return None
-
-#     async def _stop(self, task):
-#         task.cancel()  # cancelling a task, merely requests a cancellation.
-#         try:
-#             await task
-#         except asyncio.CancelledError:
-#             return
-
-#     def stop(self, name):
-#         t = self.get_task(name)
-#         if t is not None:
-#             self.runtime.dispatch(self._stop(t))
-
-#     def stop_all(self):
-#         for task in self.tasks:
-#             self.runtime.dispatch(self._stop(task))
-
-
-# # singleton instance
-# tm = TaskManager()
-
+# store a global in the module so it acts as a singleton
+# (modules are loaded only once)
 rt = Runtime()
