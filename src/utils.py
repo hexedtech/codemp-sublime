@@ -1,5 +1,6 @@
 import sublime
 import sublime_plugin
+from Codemp.src import globals as g
 
 
 def status_log(msg, popup=False):
@@ -47,3 +48,22 @@ def get_view_from_local_path(path):
         for view in window.views():
             if view.file_name() == path:
                 return view
+
+
+def draw_cursor_region(view, cursor):
+    reg = rowcol_to_region(view, cursor.start, cursor.end)
+    reg_flags = sublime.RegionFlags.DRAW_EMPTY
+
+    user_hash = hash(cursor.user)
+
+    def draw():
+        view.add_regions(
+            f"{g.SUBLIME_REGIONS_PREFIX}-{user_hash}",
+            [reg],
+            flags=reg_flags,
+            scope=g.REGIONS_COLORS[user_hash % len(g.REGIONS_COLORS)],
+            annotations=[cursor.user],  # pyright: ignore
+            annotation_color=g.PALETTE[user_hash % len(g.PALETTE)],
+        )
+
+    sublime.set_timeout_async(draw)

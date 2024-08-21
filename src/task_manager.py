@@ -1,6 +1,5 @@
 from typing import Optional, Callable, Any
 
-from asyncio.coroutines import functools
 import sublime
 import logging
 import asyncio
@@ -147,4 +146,4 @@ class Runtime:
 
 # store a global in the module so it acts as a singleton
 # (modules are loaded only once)
-rt = Runtime()
+# rt = Runtime()
