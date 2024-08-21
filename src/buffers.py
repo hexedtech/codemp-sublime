@@ -58,6 +58,7 @@ class VirtualBuffer:
         self.view.erase_status(g.SUBLIME_STATUS_ID)
 
         rt.stop_task(f"{g.BUFFCTL_TASK_PREFIX}-{self.codemp_id}")
+        self.buffctl.stop()
         logger.info(f"cleaning up virtual buffer '{self.codemp_id}'")
 
     async def apply_bufferchange_task(self):
@@ -94,7 +95,7 @@ class VirtualBuffer:
             logger.error(f"buffer worker '{self.codemp_id}' crashed:\n{e}")
             raise
 
-    async def send_buffer_change(self, changes):
+    def send_buffer_change(self, changes):
         # we do not do any index checking, and trust sublime with providing the correct
         # sequential indexing, assuming the changes are applied in the order they are received.
         for change in changes:
@@ -104,7 +105,7 @@ class VirtualBuffer:
                     region.begin(), region.end(), change.str
                 )
             )
-            await self.buffctl.send(region.begin(), region.end(), change.str)
+            self.buffctl.send(region.begin(), region.end(), change.str)
 
     def send_cursor(self, vws):  # pyright: ignore  # noqa: F821
         # TODO: only the last placed cursor/selection.

@@ -5,12 +5,12 @@ import sublime_plugin
 import logging
 import random
 
-from Codemp.src.task_manager import rt
-from Codemp.src.client import client, VirtualClient
-from Codemp.src.logger import inner_logger
+# from Codemp.src.task_manager import rt
+from Codemp.src.client import client
 from Codemp.src.utils import safe_listener_detach
 from Codemp.src.utils import safe_listener_attach
 from Codemp.src import globals as g
+from codemp import register_logger
 
 LOG_LEVEL = logging.DEBUG
 handler = logging.StreamHandler()
@@ -27,49 +27,37 @@ package_logger.propagate = False
 
 logger = logging.getLogger(__name__)
 
+# returns false if logger already exists
+register_logger(lambda msg: logger.log(logger.level, msg), False)
+
 TEXT_LISTENER = None
-# rt.dispatch(inner_logger.listen(), "codemp-logger")
 
 
 # Initialisation and Deinitialisation
 ##############################################################################
 def plugin_loaded():
     global TEXT_LISTENER
-
-    # instantiate and start a global asyncio event loop.
-    # pass in the exit_handler coroutine that will be called upon relasing the event loop.
-    # tm.acquire(disconnect_client)
-
     TEXT_LISTENER = CodempClientTextChangeListener()
-
     logger.debug("plugin loaded")
 
 
-def disconnect_client():
+def plugin_unloaded():
+    logger.debug("unloading")
     global TEXT_LISTENER
 
     if TEXT_LISTENER is not None:
         safe_listener_detach(TEXT_LISTENER)
 
-    for vws in client.workspaces.values():
-        vws.cleanup()
-
-    client.handle = None  # drop
-
-
-def plugin_unloaded():
-    # releasing the runtime, runs the disconnect callback defined when acquiring the event loop.
-    logger.debug("unloading")
     package_logger.removeHandler(handler)
-    disconnect_client()
-    rt.stop_loop()
+    client.disconnect()
+    # rt.stop_loop()
 
 
 # Listeners
 ##############################################################################
 class EventListener(sublime_plugin.EventListener):
     def on_exit(self):
-        disconnect_client()
+        client.disconnect()
 
     def on_pre_close_window(self, window):
         if client.active_workspace is None:
@@ -220,32 +208,29 @@ class ConnectUserName(sublime_plugin.TextInputHandler):
 
 # Generic Join Command
 #############################################################################
-async def JoinCommand(client: VirtualClient, workspace_id: str, buffer_id: str):
-    if workspace_id == "":
-        return
-
-    vws = client.workspaces.get(workspace_id)
-    if vws is None:
-        try:
-            vws = await client.join_workspace(workspace_id)
-        except Exception as e:
-            raise e
-
-    if vws is None:
-        logger.warning("The client returned a void workspace.")
-        return
-
-    vws.materialize()
-
-    if buffer_id != "":
-        await vws.attach(buffer_id)
-
-
 class CodempJoinCommand(sublime_plugin.WindowCommand):
     def run(self, workspace_id, buffer_id):
+        if workspace_id == "":
+            return
+
+        vws = client.workspaces.get(workspace_id)
+        if vws is None:
+            try:
+                vws = client.join_workspace(workspace_id)
+            except Exception as e:
+                raise e
+
+        if vws is None:
+            logger.warning("The client returned a void workspace.")
+            return
+
+        vws.materialize()
+
         if buffer_id == "* Don't Join Any":
             buffer_id = ""
-        rt.dispatch(JoinCommand(client, workspace_id, buffer_id))
+
+        if buffer_id != "":
+            vws.attach(buffer_id)
 
     def is_enabled(self) -> bool:
         return client.handle is not None
@@ -287,7 +272,7 @@ class JoinWorkspaceIdList(sublime_plugin.ListInputHandler):
 
         wid = args["workspace_id"]
         if wid != "":
-            vws = rt.block_on(client.join_workspace(wid))
+            vws = client.join_workspace(wid)
         else:
             vws = None
         try:
@@ -385,7 +370,7 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
             return False
 
     def run(self):
-        disconnect_client()
+        client.disconnect()
 
 
 # Leave Workspace Command
