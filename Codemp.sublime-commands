@@ -29,8 +29,16 @@
   	}
   },
   {
-    "caption": "Codemp: Join",
-    "command": "codemp_join",
+    "caption": "Codemp: Join Workspace",
+    "command": "codemp_join_workspace",
+    "arg": {
+      // 'workspace_id': 'asd'
+      // 'buffer_id': 'test'
+    },
+  },
+  {
+    "caption": "Codemp: Join Buffer",
+    "command": "codemp_join_buffer",
     "arg": {
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'

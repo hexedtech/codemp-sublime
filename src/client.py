@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Dict
+
 
 import sublime
 import logging
@@ -7,114 +8,132 @@ import logging
 import codemp
 from Codemp.src import globals as g
 from Codemp.src.workspace import VirtualWorkspace
+from Codemp.src.buffers import VirtualBuffer
+from Codemp.src.utils import bidict
 
 logger = logging.getLogger(__name__)
 
+# the client will be responsible to keep track of everything!
+# it will need 3 bidirectional dictionaries and 2 normal ones
+# normal: workspace_id -> VirtualWorkspaces
+# normal: buffer_id -> VirtualBuffer
+# bidir: VirtualBuffer <-> VirtualWorkspace
+# bidir: VirtualBuffer <-> Sublime.View
+# bidir: VirtualWorkspace <-> Sublime.Window
+
 
 class VirtualClient:
-    handle: Optional[codemp.Client]
-
     def __init__(self):
+        self.codemp: Optional[codemp.Client] = None
         self.driver = codemp.init(lambda msg: logger.log(logger.level, msg), False)
-        self.workspaces: dict[str, VirtualWorkspace] = {}
-        self.active_workspace: Optional[None] = None
 
-    def __getitem__(self, key: str):
-        return self.workspaces.get(key)
+        # bookkeeping corner
+        self.__id2buffer: dict[str, VirtualBuffer] = {}
+        self.__id2workspace: dict[str, VirtualWorkspace] = {}
+        self.__view2buff: dict[sublime.View, VirtualBuffer] = {}
+
+        self.__buff2workspace: bidict[VirtualBuffer, VirtualWorkspace] = bidict()
+        self.__workspace2window: bidict[VirtualWorkspace, sublime.Window] = bidict()
+
+    def valid_window(self, window: sublime.Window):
+        return window in self.__workspace2window.inverse
+
+    def valid_workspace(self, workspace: VirtualWorkspace | str):
+        if isinstance(workspace, str):
+            return client.__id2workspace.get(workspace) is not None
+
+        return workspace in self.__workspace2window
+
+    def all_workspaces(
+        self, window: Optional[sublime.Window] = None
+    ) -> list[VirtualWorkspace]:
+        if window is None:
+            return list(self.__workspace2window.keys())
+        else:
+            return self.__workspace2window.inverse[window]
+
+    def workspace_from_view(self, view: sublime.View) -> Optional[VirtualWorkspace]:
+        buff = self.__view2buff.get(view, None)
+        return self.__buff2workspace.get(buff, None)
+
+    def workspace_from_buffer(self, buff: VirtualBuffer) -> Optional[VirtualWorkspace]:
+        return self.__buff2workspace.get(buff)
+
+    def workspace_from_id(self, id: str) -> Optional[VirtualWorkspace]:
+        return self.__id2workspace.get(id)
+
+    def all_buffers(
+        self, workspace: Optional[VirtualWorkspace | str] = None
+    ) -> list[VirtualBuffer]:
+        if workspace is None:
+            return list(self.__buff2workspace.keys())
+        else:
+            if isinstance(workspace, str):
+                workspace = client.__id2workspace[workspace]
+            return self.__buff2workspace.inverse[workspace]
+
+    def buffer_from_view(self, view: sublime.View) -> Optional[VirtualBuffer]:
+        return self.__view2buff.get(view)
+
+    def buffer_from_id(self, id: str) -> Optional[VirtualBuffer]:
+        return self.__id2buffer.get(id)
+
+    def view_from_buffer(self, buff: VirtualBuffer) -> sublime.View:
+        return buff.view
 
     def disconnect(self):
-        if self.handle is None:
+        if self.codemp is None:
             return
         logger.info("disconnecting from the current client")
-        for vws in self.workspaces.values():
+        # for each workspace tell it to clean up after itself.
+        for vws in self.all_workspaces():
             vws.cleanup()
+            self.codemp.leave_workspace(vws.id)
 
-        self.handle = None
+        self.__id2workspace.clear()
+        self.__id2buffer.clear()
+        self.__buff2workspace.clear()
+        self.__view2buff.clear()
+        self.__workspace2window.clear()
+        self.codemp = None
 
     def connect(self, host: str, user: str, password: str):
-        if self.handle is not None:
+        if self.codemp is not None:
             logger.info("Disconnecting from previous client.")
             return self.disconnect()
 
-        logger.info(f"Connecting to {host} with user {user}")
-        try:
-            self.handle = codemp.Client(host, user, password)
+        self.codemp = codemp.Client(host, user, password)
+        id = self.codemp.user_id()
+        logger.debug(f"Connected to '{host}' as user {user} (id: {id})")
 
-            if self.handle is not None:
-                id = self.handle.user_id()
-                logger.debug(f"Connected to '{host}' with user {user} and id: {id}")
-
-        except Exception as e:
-            logger.error(f"Could not connect: {e}")
-            sublime.error_message(
-                "Could not connect:\n Make sure the server is up.\n\
-                or your credentials are correct."
-            )
-            raise
-
-    def join_workspace(
-        self,
-        workspace_id: str,
+    def install_workspace(
+        self, workspace: codemp.Workspace, window: sublime.Window
     ) -> VirtualWorkspace:
-        if self.handle is None:
-            sublime.error_message("Connect to a server first.")
-            raise
+        # we pass the window as well so if the window changes in the mean
+        # time we have the correct one!
+        vws = VirtualWorkspace(workspace, window)
+        self.__workspace2window[vws] = window
+        self.__id2workspace[vws.id] = vws
 
-        logger.info(f"Joining workspace: '{workspace_id}'")
-        try:
-            workspace = self.handle.join_workspace(workspace_id).wait()
-        except Exception as e:
-            logger.error(f"Could not join workspace '{workspace_id}'.\n\nerror: {e}")
-            sublime.error_message(f"Could not join workspace '{workspace_id}'")
-            raise
-
-        vws = VirtualWorkspace(workspace)
-        self.workspaces[workspace_id] = vws
+        vws.install()
 
         return vws
 
-    def leave_workspace(self, id: str):
-        if self.handle is None:
+    def uninstall_workspace(self, vws: VirtualWorkspace):
+        if vws not in self.__workspace2window:
             raise
 
-        if self.handle.leave_workspace(id):
-            logger.info(f"Leaving workspace: '{id}'")
-            self.workspaces[id].cleanup()
-            del self.workspaces[id]
+        logger.info(f"Uninstalling workspace '{vws.id}'...")
+        vws.cleanup()
+        del self.__id2workspace[vws.id]
+        del self.__workspace2window[vws]
+        self.__buff2workspace.inverse_del(vws)
 
-    def get_workspace(self, view):
-        tag_id = view.settings().get(g.CODEMP_WORKSPACE_ID)
-        if tag_id is None:
-            return
-
-        ws = self.workspaces.get(tag_id)
-        if ws is None:
-            logging.warning("a tag on the view was found but not a matching workspace.")
-            return
-
-        return ws
-
-    def active_workspaces(self):
-        return self.handle.active_workspaces() if self.handle else []
+    def workspaces_in_server(self):
+        return self.codemp.active_workspaces() if self.codemp else []
 
     def user_id(self):
-        return self.handle.user_id() if self.handle else None
-
-    def get_buffer(self, view):
-        ws = self.get_workspace(view)
-        return None if ws is None else ws.get_by_local(view.buffer_id())
-
-    def make_active(self, ws: Optional[VirtualWorkspace]):
-        if self.active_workspace == ws:
-            return
-
-        if self.active_workspace is not None:
-            self.active_workspace.deactivate()
-
-        if ws is not None:
-            ws.activate()
-
-        self.active_workspace = ws  # pyright: ignore
+        return self.codemp.user_id() if self.codemp else None
 
 
 client = VirtualClient()
