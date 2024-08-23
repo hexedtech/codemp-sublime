@@ -1,16 +1,14 @@
 # pyright: reportIncompatibleMethodOverride=false
-
 import sublime
 import sublime_plugin
 import logging
 import random
 
-# from Codemp.src.task_manager import rt
+import codemp
 from Codemp.src.client import client
 from Codemp.src.utils import safe_listener_detach
 from Codemp.src.utils import safe_listener_attach
 from Codemp.src import globals as g
-from codemp import register_logger
 
 LOG_LEVEL = logging.DEBUG
 handler = logging.StreamHandler()
@@ -26,9 +24,6 @@ package_logger.setLevel(LOG_LEVEL)
 package_logger.propagate = False
 
 logger = logging.getLogger(__name__)
-
-# returns false if logger already exists
-register_logger(lambda msg: logger.log(logger.level, msg), False)
 
 TEXT_LISTENER = None
 
@@ -49,37 +44,36 @@ def plugin_unloaded():
         safe_listener_detach(TEXT_LISTENER)
 
     package_logger.removeHandler(handler)
-    client.disconnect()
+    # client.disconnect()
     # rt.stop_loop()
 
 
 # Listeners
 ##############################################################################
 class EventListener(sublime_plugin.EventListener):
+    def is_enabled(self):
+        return client.codemp is not None
+
     def on_exit(self):
         client.disconnect()
+        client.driver.stop()
 
     def on_pre_close_window(self, window):
-        if client.active_workspace is None:
-            return  # nothing to do
-
-        # deactivate all workspaces
-        client.make_active(None)
-
-        s = window.settings()
-        if not s.get(g.CODEMP_WINDOW_TAG, False):
+        assert client.codemp is not None
+        if not client.valid_window(window):
             return
 
-        for wsid in s[g.CODEMP_WINDOW_WORKSPACES]:
-            ws = client[wsid]
-            if ws is None:
-                logger.warning(
-                    "a tag on the window was found but not a matching workspace."
-                )
-                continue
+        for vws in client.all_workspaces(window):
+            client.codemp.leave_workspace(vws.id)
+            client.uninstall_workspace(vws)
 
-            ws.cleanup()
-            del client.workspaces[wsid]
+    def on_text_command(self, view, command_name, args):
+        if command_name == "codemp_replace_text":
+            logger.info("got a codemp_replace_text command!")
+
+    def on_post_text_command(self, view, command_name, args):
+        if command_name == "codemp_replace_text":
+            logger.info("got a codemp_replace_text command!")
 
 
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
@@ -92,40 +86,43 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         return False
 
     def on_selection_modified_async(self):
-        ws = client.get_workspace(self.view)
-        if ws is None:
-            return
+        region = self.view.sel()[0]
+        start = self.view.rowcol(region.begin())
+        end = self.view.rowcol(region.end())
 
-        vbuff = ws.get_by_local(self.view.buffer_id())
-        if vbuff is not None:
-            vbuff.send_cursor(ws)
+        vws = client.workspace_from_view(self.view)
+        vbuff = client.buffer_from_view(self.view)
+        if vws is None or vbuff is None:
+            raise
+        vws.send_cursor(vbuff.id, start, end)
 
     def on_activated(self):
-        # sublime has no proper way to check if a view gained or lost input focus outside of this
-        # callback (i know right?), so we have to manually keep track of which view has the focus
-        g.ACTIVE_CODEMP_VIEW = self.view.id()
-        # print("view {} activated".format(self.view.id()))
         global TEXT_LISTENER
         safe_listener_attach(TEXT_LISTENER, self.view.buffer())  # pyright: ignore
 
     def on_deactivated(self):
-        g.ACTIVE_CODEMP_VIEW = None
-        # print("view {} deactivated".format(self.view.id()))
         global TEXT_LISTENER
         safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
 
     def on_pre_close(self):
-        global TEXT_LISTENER
-        if self.view.id() == g.ACTIVE_CODEMP_VIEW:
+        if self.view == sublime.active_window().active_view():
+            global TEXT_LISTENER
             safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
 
-        ws = client.get_workspace(self.view)
-        if ws is None:
-            return
+        vws = client.workspace_from_view(self.view)
+        vbuff = client.buffer_from_view(self.view)
+        if vws is None or vbuff is None:
+            raise
 
-        vbuff = ws.get_by_local(self.view.buffer_id())
-        if vbuff is not None:
-            vbuff.cleanup()
+        vws.uninstall_buffer(vbuff.id)
+
+    def on_text_command(self, command_name, args):
+        if command_name == "codemp_replace_text":
+            logger.info("got a codemp_replace_text command! but in the view listener")
+
+    def on_post_text_command(self, command_name, args):
+        if command_name == "codemp_replace_text":
+            logger.info("got a codemp_replace_text command! but in the view listener")
 
 
 class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
@@ -135,17 +132,18 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
         # we'll do it by hand with .attach(buffer).
         return False
 
-    # blocking :D
-    def on_text_changed(self, changes):
+    # we do the boring stuff in the async thread
+    def on_text_changed_async(self, changes):
         s = self.buffer.primary_view().settings()
-        if s.get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, None):
+        if s.get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, False):
             logger.debug("Ignoring echoing back the change.")
             s[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
             return
 
-        vbuff = client.get_buffer(self.buffer.primary_view())
+        vbuff = client.buffer_from_view(self.buffer.primary_view())
         if vbuff is not None:
-            rt.dispatch(vbuff.send_buffer_change(changes))
+            # but then we block the main one for the actual sending!
+            sublime.set_timeout(lambda: vbuff.send_buffer_change(changes))
 
 
 # Commands:
@@ -166,11 +164,23 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 # Connect Command
 #############################################################################
 class CodempConnectCommand(sublime_plugin.WindowCommand):
-    def run(self, server_host, user_name, password="lmaodefaultpassword"):
-        client.connect(server_host, user_name, password)
-
     def is_enabled(self) -> bool:
-        return client.handle is None
+        return client.codemp is None
+
+    def run(self, server_host, user_name, password="lmaodefaultpassword"):
+        logger.info(f"Connecting to {server_host} with user {user_name}...")
+
+        def try_connect():
+            try:
+                client.connect(server_host, user_name, password)
+            except Exception as e:
+                logger.error(f"Could not connect: {e}")
+                sublime.error_message(
+                    "Could not connect:\n Make sure the server is up\n\
+                    and your credentials are correct."
+                )
+
+        sublime.set_timeout_async(try_connect)
 
     def input(self, args):
         if "server_host" not in args:
@@ -206,93 +216,148 @@ class ConnectUserName(sublime_plugin.TextInputHandler):
 # Separate the join command into two join workspace and join buffer commands that get called back to back
 
 
-# Generic Join Command
+# Generic Join Workspace Command
 #############################################################################
-class CodempJoinCommand(sublime_plugin.WindowCommand):
-    def run(self, workspace_id, buffer_id):
-        if workspace_id == "":
-            return
-
-        vws = client.workspaces.get(workspace_id)
-        if vws is None:
-            try:
-                vws = client.join_workspace(workspace_id)
-            except Exception as e:
-                raise e
-
-        if vws is None:
-            logger.warning("The client returned a void workspace.")
-            return
-
-        vws.materialize()
-
-        if buffer_id == "* Don't Join Any":
-            buffer_id = ""
-
-        if buffer_id != "":
-            vws.attach(buffer_id)
-
+class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
-        return client.handle is not None
+        return client.codemp is not None
+
+    def run(self, workspace_id):
+        assert client.codemp is not None
+        if client.valid_workspace(workspace_id):
+            logger.info(f"Joining workspace: '{workspace_id}'...")
+            promise = client.codemp.join_workspace(workspace_id)
+            active_window = sublime.active_window()
+
+            def defer_instantiation(promise):
+                try:
+                    workspace = promise.wait()
+                except Exception as e:
+                    logger.error(
+                        f"Could not join workspace '{workspace_id}'.\n\nerror: {e}"
+                    )
+                    sublime.error_message(f"Could not join workspace '{workspace_id}'")
+                    return
+                client.install_workspace(workspace, active_window)
+
+            sublime.set_timeout_async(lambda: defer_instantiation(promise))
+        # the else shouldn't really happen, and if it does, it should already be instantiated.
+        # ignore.
 
     def input_description(self):
         return "Join:"
 
     def input(self, args):
         if "workspace_id" not in args:
-            return JoinWorkspaceIdList()
+            return WorkspaceIdText()
 
 
-class JoinWorkspaceIdList(sublime_plugin.ListInputHandler):
-    # To allow for having a selection and choosing non existing workspaces
-    # we do a little dance: We pass this list input handler to a TextInputHandler
-    # when we select "Create New..." which adds his result to the list of possible
-    # workspaces and pop itself off the stack to go back to the list handler.
-    def __init__(self):
-        self.list = client.active_workspaces()
-        self.list.sort()
-        self.list.append("* Create New...")
-        self.preselected = None
-
+class WorkspaceIdText(sublime_plugin.TextInputHandler):
     def name(self):
         return "workspace_id"
 
-    def placeholder(self):
-        return "Workspace"
 
-    def list_items(self):
-        if self.preselected is not None:
-            return (self.list, self.preselected)
-        else:
-            return self.list
+# To allow for having a selection and choosing non existing workspaces
+# we do a little dance: We pass this list input handler to a TextInputHandler
+# when we select "Create New..." which adds his result to the list of possible
+# workspaces and pop itself off the stack to go back to the list handler.
+# class WorkspaceIdList(sublime_plugin.ListInputHandler):
+#     def __init__(self):
+#         assert client.codemp is not None  # the command should not be available
 
-    def next_input(self, args):
-        if args["workspace_id"] == "* Create New...":
-            return AddListEntryName(self)
+#         # at the moment, the client can't give us a full list of existing workspaces
+#         # so a textinputhandler would be more appropriate. but we keep this for the future
 
-        wid = args["workspace_id"]
-        if wid != "":
-            vws = client.join_workspace(wid)
-        else:
-            vws = None
-        try:
-            return ListBufferId(vws)
-        except Exception:
-            return TextBufferId()
+#         self.add_entry_text = "* add entry..."
+#         self.list = client.codemp.active_workspaces()
+#         self.list.sort()
+#         self.list.append(self.add_entry_text)
+#         self.preselected = None
+
+#     def name(self):
+#         return "workspace_id"
+
+#     def placeholder(self):
+#         return "Workspace"
+
+#     def list_items(self):
+#         if self.preselected is not None:
+#             return (self.list, self.preselected)
+#         else:
+#             return self.list
+
+#     def next_input(self, args):
+#         if args["workspace_id"] == self.add_entry_text:
+#             return AddListEntry(self)
 
 
-class TextBufferId(sublime_plugin.TextInputHandler):
-    def name(self):
-        return "buffer_id"
+class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        available_workspaces = client.all_workspaces(self.window)
+        return len(available_workspaces) > 0
+
+    def run(self, workspace_id, buffer_id):
+        # A workspace has some Buffers inside of it (filetree)
+        # some of those you are already attached to
+        # If already attached to it return the same alredy existing bufferctl
+        # if existing but not attached (attach)
+        # if not existing ask for creation (create + attach)
+        vws = client.workspace_from_id(workspace_id)
+        assert vws is not None
+        # is the buffer already installed?
+        if vws.valid_buffer(buffer_id):
+            return  # do nothing.
+
+        if buffer_id not in vws.codemp.filetree(filter=buffer_id):
+            create = sublime.ok_cancel_dialog(
+                "There is no buffer named '{buffer_id}' in the workspace '{workspace_id}'.\n\
+                Do you want to create it?",
+                ok_title="yes",
+                title="Create Buffer?",
+            )
+            if create:
+                try:
+                    create_promise = vws.codemp.create(buffer_id)
+                except Exception as e:
+                    logging.error(f"could not create buffer:\n\n {e}")
+                    return
+                create_promise.wait()
+
+        # now we can defer the attaching process
+        promise = vws.codemp.attach(buffer_id)
+
+        def deferred_attach(promise):
+            try:
+                buff_ctl = promise.wait()
+            except Exception as e:
+                logging.error(f"error when attaching to buffer '{id}':\n\n {e}")
+                sublime.error_message(f"Could not attach to buffer '{buffer_id}'")
+                return
+            vbuff = vws.install_buffer(buff_ctl)
+            # TODO! if the view is already active calling focus_view() will not trigger the on_activate
+            self.window.focus_view(vbuff.view)
+
+        sublime.set_timeout_async(lambda: deferred_attach(promise))
+
+    def input_description(self) -> str:
+        return "Attach: "
+
+    def input(self, args):
+        # if we have only a workspace in the window, then
+        # skip to the buffer choice
+        if "workspace_id" not in args:
+            return ActiveWorkspacesIdList(self.window, get_buffer=True)
+
+        if "buffer_id" not in args:
+            return BufferIdList(args["workspace_id"])
 
 
-class ListBufferId(sublime_plugin.ListInputHandler):
-    def __init__(self, vws):
-        self.ws = vws
-        self.list = vws.handle.filetree()
+class BufferIdList(sublime_plugin.ListInputHandler):
+    def __init__(self, workspace_id):
+        self.add_entry_text = "* create new..."
+        self.list = [vbuff.id for vbuff in client.all_buffers(workspace_id)]
         self.list.sort()
-        self.list.append("* Create New...")
-        self.list.append("* Don't Join Any")
+        self.list.append(self.add_entry_text)
         self.preselected = None
 
     def name(self):
@@ -307,34 +372,9 @@ class ListBufferId(sublime_plugin.ListInputHandler):
         else:
             return self.list
 
-    def cancel(self):
-        client.leave_workspace(self.ws.id)
-
     def next_input(self, args):
-        if args["buffer_id"] == "* Create New...":
-            return AddListEntryName(self)
-
-        if args["buffer_id"] == "* Dont' Join Any":
-            return None
-
-
-class AddListEntryName(sublime_plugin.TextInputHandler):
-    def __init__(self, list_handler):
-        self.parent = list_handler
-
-    def name(self):
-        return None
-
-    def validate(self, text: str) -> bool:
-        return not len(text) == 0
-
-    def confirm(self, text: str):
-        self.parent.list.pop()  # removes the "Create New..."
-        self.parent.list.insert(0, text)
-        self.parent.preselected = 0
-
-    def next_input(self, args):
-        return sublime_plugin.BackInputHandler()
+        if args["buffer_id"] == self.add_entry_text:
+            return AddListEntry(self)
 
 
 # Text Change Command
@@ -363,11 +403,8 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 # Disconnect Command
 #############################################################################
 class CodempDisconnectCommand(sublime_plugin.WindowCommand):
-    def is_enabled(self) -> bool:
-        if client.handle is not None:
-            return True
-        else:
-            return False
+    def is_enabled(self):
+        return client.codemp is not None
 
     def run(self):
         client.disconnect()
@@ -375,23 +412,54 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
 
 # Leave Workspace Command
 class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
-    def is_enabled(self) -> bool:
-        return client.handle is not None and len(client.workspaces.keys()) > 0
+    def is_enabled(self):
+        return client.codemp is not None and len(client.all_workspaces(self.window)) > 0
 
-    def run(self, id: str):
-        client.leave_workspace(id)
+    def run(self, workspace_id: str):
+        # client.leave_workspace(id)
+        pass
 
     def input(self, args):
         if "id" not in args:
-            return LeaveWorkspaceIdList()
+            return ActiveWorkspacesIdList()
 
 
-class LeaveWorkspaceIdList(sublime_plugin.ListInputHandler):
+class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):
+    def __init__(self, window=None, get_buffer=False):
+        self.window = window
+        self.get_buffer = get_buffer
+
     def name(self):
-        return "id"
+        return "workspace_id"
 
     def list_items(self):
-        return client.active_workspaces()
+        return [vws.id for vws in client.all_workspaces(self.window)]
+
+    def next_input(self, args):
+        if self.get_buffer:
+            return BufferIdList(args["workspace_id"])
+
+
+class AddListEntry(sublime_plugin.TextInputHandler):
+    # this class works when the list input handler
+    # added appended a new element to it's list that will need to be
+    # replaced with the entry added from here!
+    def __init__(self, list_input_handler):
+        self.parent = list_input_handler
+
+    def name(self):
+        return None
+
+    def validate(self, text: str) -> bool:
+        return not len(text) == 0
+
+    def confirm(self, text: str):
+        self.parent.list.pop()  # removes the add_entry_text
+        self.parent.list.insert(0, text)
+        self.parent.preselected = 0
+
+    def next_input(self, args):
+        return sublime_plugin.BackInputHandler()
 
 
 # Proxy Commands ( NOT USED, left just in case we need it again. )

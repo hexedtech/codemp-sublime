@@ -6,8 +6,6 @@ import asyncio
 import threading
 import concurrent.futures
 
-# from ..ext import sublime_asyncio as rt
-
 logger = logging.getLogger(__name__)
 
 
