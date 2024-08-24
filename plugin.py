@@ -3,6 +3,7 @@ import sublime
 import sublime_plugin
 import logging
 import random
+from typing import List, Tuple
 
 import codemp
 from Codemp.src.client import client
@@ -114,7 +115,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         if vws is None or vbuff is None:
             raise
 
-        vws.uninstall_buffer(vbuff.id)
+        vws.uninstall_buffer(vbuff)
 
     def on_text_command(self, command_name, args):
         if command_name == "codemp_replace_text":
@@ -146,23 +147,26 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
             sublime.set_timeout(lambda: vbuff.send_buffer_change(changes))
 
 
-# Commands:
+# Client Commands:
 #   codemp_connect:         connect to a server.
-#   codemp_join:            shortcut command if you already know both workspace id
-#                           and buffer id
-#   codemp_join_workspace:  joins a specific workspace, without joining also a buffer
-#   codemp_join_buffer:     joins a specific buffer within the current active workspace
-
-
-#   codemp_share:           ??? todo!()
 #   codemp_disconnect:      manually call the disconnection, triggering the cleanup and dropping
 #                           the connection
-#
+#   codemp_join_workspace:  joins a specific workspace, without joining also a buffer
+#   codemp_leave_workspace:
+
+# Workspace Commands:
+#   codemp_join_buffer:     joins a specific buffer within the current active workspace
+#   codemp_leave_buffer:
+#   codemp_create_buffer:
+#   codemp_delete_buffer:
+
 # Internal commands:
 #   replace_text:       swaps the content of a view with the given text.
-#
-# Connect Command
+
+
+# Client Commands
 #############################################################################
+# Connect Command
 class CodempConnectCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
         return client.codemp is None
@@ -182,42 +186,27 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
 
         sublime.set_timeout_async(try_connect)
 
-    def input(self, args):
-        if "server_host" not in args:
-            return ConnectServerHost()
-
     def input_description(self):
         return "Server host:"
 
-
-class ConnectServerHost(sublime_plugin.TextInputHandler):
-    def name(self):
-        return "server_host"
-
-    def initial_text(self):
-        return "http://127.0.0.1:50051"
-
-    def next_input(self, args):
-        if "user_name" not in args:
-            return ConnectUserName(args)
+    def input(self, args):
+        if "server_host" not in args:
+            return SimpleTextInput(
+                ("server_host", "http://127.0.0.1:50051"),
+                ("user_name", f"user-{random.random()}"),
+            )
 
 
-class ConnectUserName(sublime_plugin.TextInputHandler):
-    def __init__(self, args):
-        self.host = args["server_host"]
+# Disconnect Command
+class CodempDisconnectCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        return client.codemp is not None
 
-    def name(self):
-        return "user_name"
-
-    def initial_text(self):
-        return f"user-{random.random()}"
+    def run(self):
+        client.disconnect()
 
 
-# Separate the join command into two join workspace and join buffer commands that get called back to back
-
-
-# Generic Join Workspace Command
-#############################################################################
+# Join Workspace Command
 class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
         return client.codemp is not None
@@ -250,11 +239,6 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "workspace_id" not in args:
             return WorkspaceIdText()
-
-
-class WorkspaceIdText(sublime_plugin.TextInputHandler):
-    def name(self):
-        return "workspace_id"
 
 
 # To allow for having a selection and choosing non existing workspaces
@@ -291,6 +275,25 @@ class WorkspaceIdText(sublime_plugin.TextInputHandler):
 #             return AddListEntry(self)
 
 
+# Leave Workspace Command
+class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        return client.codemp is not None and len(client.all_workspaces(self.window)) > 0
+
+    def run(self, workspace_id: str):
+        # client.leave_workspace(id)
+        pass
+
+    def input(self, args):
+        if "id" not in args:
+            return ActiveWorkspacesIdList()
+
+
+# WORKSPACE COMMANDS
+#############################################################################
+
+
+# Join Buffer Command
 class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         available_workspaces = client.all_workspaces(self.window)
@@ -343,12 +346,90 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
         return "Attach: "
 
     def input(self, args):
-        # if we have only a workspace in the window, then
-        # skip to the buffer choice
         if "workspace_id" not in args:
             return ActiveWorkspacesIdList(self.window, get_buffer=True)
 
         if "buffer_id" not in args:
+            return BufferIdList(args["workspace_id"])
+
+
+# Leave Buffer Comand
+class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        return len(client.all_buffers()) > 0
+
+    def run(self, workspace_id, buffer_id):
+        vbuff = client.buffer_from_id(buffer_id)
+        vws = client.workspace_from_id(workspace_id)
+
+        if vbuff is None or vws is None:
+            return
+
+        def defer_detach():
+            if vws.codemp.detach(buffer_id):
+                vws.uninstall_buffer(vbuff)
+
+        sublime.set_timeout_async(defer_detach)
+
+    def input_description(self) -> str:
+        return "Leave: "
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            return ActiveWorkspacesIdList(self.window, get_buffer=True)
+
+        if "buffer_id" not in args:
+            return BufferIdList(args["workspace_id"])
+
+
+# Text Change Command
+#############################################################################
+class CodempReplaceTextCommand(sublime_plugin.TextCommand):
+    def run(self, edit, start, end, content, change_id):
+        # we modify the region to account for any change that happened in the mean time
+        region = self.view.transform_region_from(sublime.Region(start, end), change_id)
+        self.view.replace(edit, region, content)
+
+
+# Input handlers
+############################################################
+class SimpleTextInput(sublime_plugin.TextInputHandler):
+    def __init__(self, *args: Tuple[str, str]):
+        assert len(args) > 0
+        self.argname = args[0][0]
+        self.default = args[0][1]
+        self.next_inputs = args[1:]
+
+    def initial_text(self):
+        return self.default
+
+    def name(self):
+        return self.argname
+
+    def next_input(self, args):
+        if len(self.next_inputs) > 0:
+            if self.next_inputs[0][0] not in args:
+                return SimpleTextInput(*self.next_inputs)
+
+
+class WorkspaceIdText(sublime_plugin.TextInputHandler):
+    def name(self):
+        return "workspace_id"
+
+
+class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):
+    def __init__(self, window=None, get_buffer=False):
+        self.window = window
+        self.get_buffer = get_buffer
+
+    def name(self):
+        return "workspace_id"
+
+    def list_items(self):
+        return [vws.id for vws in client.all_workspaces(self.window)]
+
+    def next_input(self, args):
+        if self.get_buffer:
             return BufferIdList(args["workspace_id"])
 
 
@@ -375,69 +456,6 @@ class BufferIdList(sublime_plugin.ListInputHandler):
     def next_input(self, args):
         if args["buffer_id"] == self.add_entry_text:
             return AddListEntry(self)
-
-
-# Text Change Command
-#############################################################################
-class CodempReplaceTextCommand(sublime_plugin.TextCommand):
-    def run(self, edit, start, end, content, change_id):
-        # we modify the region to account for any change that happened in the mean time
-        region = self.view.transform_region_from(sublime.Region(start, end), change_id)
-        self.view.replace(edit, region, content)
-
-
-# Share Command
-# #############################################################################
-# class CodempShareCommand(sublime_plugin.WindowCommand):
-#     def run(self, sublime_buffer_path, server_id):
-#         sublime_asyncio.dispatch(share_buffer_command(sublime_buffer_path, server_id))
-
-#     def input(self, args):
-#         if "sublime_buffer" not in args:
-#             return SublimeBufferPathInputHandler()
-
-#     def input_description(self):
-#         return "Share Buffer:"
-
-
-# Disconnect Command
-#############################################################################
-class CodempDisconnectCommand(sublime_plugin.WindowCommand):
-    def is_enabled(self):
-        return client.codemp is not None
-
-    def run(self):
-        client.disconnect()
-
-
-# Leave Workspace Command
-class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
-    def is_enabled(self):
-        return client.codemp is not None and len(client.all_workspaces(self.window)) > 0
-
-    def run(self, workspace_id: str):
-        # client.leave_workspace(id)
-        pass
-
-    def input(self, args):
-        if "id" not in args:
-            return ActiveWorkspacesIdList()
-
-
-class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):
-    def __init__(self, window=None, get_buffer=False):
-        self.window = window
-        self.get_buffer = get_buffer
-
-    def name(self):
-        return "workspace_id"
-
-    def list_items(self):
-        return [vws.id for vws in client.all_workspaces(self.window)]
-
-    def next_input(self, args):
-        if self.get_buffer:
-            return BufferIdList(args["workspace_id"])
 
 
 class AddListEntry(sublime_plugin.TextInputHandler):
