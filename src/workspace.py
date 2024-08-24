@@ -47,7 +47,7 @@ class VirtualWorkspace:
         all(id in self.__id2buff for id in attached_buffers)
         # TODO!
 
-    def valid_bufffer(self, buff: VirtualBuffer | str):
+    def valid_buffer(self, buff: VirtualBuffer | str):
         if isinstance(buff, str):
             return self.buff_by_id(buff) is not None
 

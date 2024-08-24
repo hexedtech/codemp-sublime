@@ -29,12 +29,24 @@
   	}
   },
   {
+    "caption": "Codemp: Disconnect Client",
+    "command": "codemp_disconnect",
+    "arg": {}
+  },
+  {
     "caption": "Codemp: Join Workspace",
     "command": "codemp_join_workspace",
     "arg": {
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'
     },
+  },
+  {
+    "caption": "Codemp: Leave Workspace",
+    "command": "codemp_leave_workspace",
+    "arg": {
+      // "id": 'lmaaaao'
+    }
   },
   {
     "caption": "Codemp: Join Buffer",
@@ -45,23 +57,11 @@
     },
   },
   {
-  	"caption": "Codemp: Share",
-  	"command": "codemp_share",
+  	"caption": "Codemp: Leave Buffer",
+  	"command": "codemp_leave_buffer",
   	"arg": {
-  		// 'sublime_buffer' : /path/to/buffer/to/share
-      // 'server_id' : 'how to call the buffer on the server'
+      // 'workspace_id': 'asd'
+      // 'buffer_id': 'test'
   	}
-  },
-  {
-    "caption": "Codemp: Leave Workspace",
-    "command": "codemp_leave_workspace",
-    "arg": {
-      // "id": 'lmaaaao'
-    }
-  },
-  {
-    "caption": "Codemp: Disconnect Client",
-    "command": "codemp_disconnect",
-    "arg": {}
   },
 ]

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Dict
+from typing import Optional
 
 
 import sublime
@@ -50,7 +50,7 @@ class VirtualClient:
         if window is None:
             return list(self.__workspace2window.keys())
         else:
-            return self.__workspace2window.inverse[window]
+            return self.__workspace2window.inverse.get(window, [])
 
     def workspace_from_view(self, view: sublime.View) -> Optional[VirtualWorkspace]:
         buff = self.__view2buff.get(view, None)
@@ -70,7 +70,7 @@ class VirtualClient:
         else:
             if isinstance(workspace, str):
                 workspace = client.__id2workspace[workspace]
-            return self.__buff2workspace.inverse[workspace]
+            return self.__buff2workspace.inverse.get(workspace, [])
 
     def buffer_from_view(self, view: sublime.View) -> Optional[VirtualBuffer]:
         return self.__view2buff.get(view)
