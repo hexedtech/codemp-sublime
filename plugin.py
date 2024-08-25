@@ -3,7 +3,7 @@ import sublime
 import sublime_plugin
 import logging
 import random
-from typing import List, Tuple
+from typing import Tuple
 
 import codemp
 from Codemp.src.client import client
@@ -27,6 +27,9 @@ package_logger.propagate = False
 logger = logging.getLogger(__name__)
 
 TEXT_LISTENER = None
+
+# the actual client gets initialized upon plugin loading as a singleton
+# in its own submodule.
 
 
 # Initialisation and Deinitialisation
@@ -238,7 +241,7 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "workspace_id" not in args:
-            return WorkspaceIdText()
+            return SimpleTextInput(("workspace_id", ""))
 
 
 # To allow for having a selection and choosing non existing workspaces
@@ -363,6 +366,8 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
         vws = client.workspace_from_id(workspace_id)
 
         if vbuff is None or vws is None:
+            sublime.error_message(f"You are not attached to the buffer '{id}'")
+            logging.warning(f"You are not attached to the buffer '{id}'")
             return
 
         def defer_detach():
@@ -373,6 +378,100 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
 
     def input_description(self) -> str:
         return "Leave: "
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            return ActiveWorkspacesIdList(self.window, get_buffer=True)
+
+        if "buffer_id" not in args:
+            return BufferIdList(args["workspace_id"])
+
+
+# Leave Buffer Comand
+class CodempCreateBufferCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        return len(client.all_workspaces(self.window)) > 0
+
+    def run(self, workspace_id, buffer_id):
+        vws = client.workspace_from_id(workspace_id)
+
+        if vws is None:
+            sublime.error_message(
+                f"You are not attached to the workspace '{workspace_id}'"
+            )
+            logging.warning(f"You are not attached to the workspace '{workspace_id}'")
+            return
+
+        vws.codemp.create(buffer_id)
+        logging.info(
+            "created buffer '{buffer_id}' in the workspace '{workspace_id}'.\n\
+            To interact with it you need to attach to it with Codemp: Attach."
+        )
+
+    def input_description(self) -> str:
+        return "Create Buffer: "
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            return ActiveWorkspacesIdList(self.window, get_buffer=True)
+
+        if "buffer_id" not in args:
+            return SimpleTextInput(("buffer_id", "new buffer"))
+
+
+class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        return len(client.all_buffers()) > 0
+
+    def run(self, workspace_id, buffer_id):
+        vws = client.workspace_from_id(workspace_id)
+        if vws is None:
+            sublime.error_message(
+                f"You are not attached to the workspace '{workspace_id}'"
+            )
+            logging.warning(f"You are not attached to the workspace '{workspace_id}'")
+            return
+
+        fetch_promise = vws.codemp.fetch_buffers()
+        delete = sublime.ok_cancel_dialog(
+            f"Confirm you want to delete the buffer '{buffer_id}'",
+            ok_title="delete",
+            title="Delete Buffer?",
+        )
+        if not delete:
+            return
+        fetch_promise.wait()
+        existing = vws.codemp.filetree(buffer_id)
+        if len(existing) == 0:
+            sublime.error_message(
+                f"The buffer '{buffer_id}' does not exists in the workspace."
+            )
+            logging.info(f"The buffer '{buffer_id}' does not exists in the workspace.")
+            return
+
+        def deferred_delete():
+            try:
+                vws.codemp.delete(buffer_id).wait()
+            except Exception as e:
+                logging.error(f"error when deleting the buffer '{id}':\n\n {e}", True)
+                return
+
+        vbuff = client.buffer_from_id(buffer_id)
+        if vbuff is None:
+            # we are not attached to it!
+            sublime.set_timeout_async(deferred_delete)
+        else:
+            if vws.codemp.detach(buffer_id):
+                vws.uninstall_buffer(vbuff)
+                sublime.set_timeout_async(deferred_delete)
+            else:
+                logging.error(
+                    f"error while detaching from buffer '{buffer_id}', aborting the delete."
+                )
+                return
+
+    def input_description(self) -> str:
+        return "Delete buffer: "
 
     def input(self, args):
         if "workspace_id" not in args:
@@ -410,11 +509,6 @@ class SimpleTextInput(sublime_plugin.TextInputHandler):
         if len(self.next_inputs) > 0:
             if self.next_inputs[0][0] not in args:
                 return SimpleTextInput(*self.next_inputs)
-
-
-class WorkspaceIdText(sublime_plugin.TextInputHandler):
-    def name(self):
-        return "workspace_id"
 
 
 class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):

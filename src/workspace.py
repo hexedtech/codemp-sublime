@@ -152,56 +152,6 @@ class VirtualWorkspace:
         del self.__id2buff[vbuff.id]
         buffview.close()
 
-    # def detach(self, id: str):
-    #     attached_Buffer = self.codemp.buffer_by_name(id)
-    #     if attached_Buffer is None:
-    #         sublime.error_message(f"You are not attached to the buffer '{id}'")
-    #         logging.warning(f"You are not attached to the buffer '{id}'")
-    #         return
-
-    #     self.codemp.detach(id)
-
-    # def delete(self, id: str):
-    #     self.codemp.fetch_buffers()
-    #     existing_Buffer = self.codemp.filetree(filter=None)
-    #     if id not in existing_Buffer:
-    #         sublime.error_message(f"The buffer '{id}' does not exists.")
-    #         logging.info(f"The buffer '{id}' does not exists.")
-    #         return
-    #     # delete a buffer that exists but you are not attached to
-    #     attached_Buffer = self.codemp.buffer_by_name(id)
-    #     if attached_Buffer is None:
-    #         delete = sublime.ok_cancel_dialog(
-    #             "Confirm you want to delete the buffer '{id}'",
-    #             ok_title="delete",
-    #             title="Delete Buffer?",
-    #         )
-    #         if delete:
-    #             try:
-    #                 self.codemp.delete(id).wait()
-    #             except Exception as e:
-    #                 logging.error(
-    #                     f"error when deleting the buffer '{id}':\n\n {e}", True
-    #                 )
-    #                 return
-    #         else:
-    #             return
-
-    #     # delete buffer that you are attached to
-    #     delete = sublime.ok_cancel_dialog(
-    #         "Confirm you want to delete the buffer '{id}'.\n\
-    #         You will be disconnected from it.",
-    #         ok_title="delete",
-    #         title="Delete Buffer?",
-    #     )
-    #     if delete:
-    #         self.codemp.detach(id)
-    #         try:
-    #             self.codemp.delete(id).wait()
-    #         except Exception as e:
-    #             logging.error(f"error when deleting the buffer '{id}':\n\n {e}", True)
-    #             return
-
     def send_cursor(self, id: str, start: Tuple[int, int], end: Tuple[int, int]):
         # we can safely ignore the promise, we don't really care if everything
         # is ok for now with the cursor.
