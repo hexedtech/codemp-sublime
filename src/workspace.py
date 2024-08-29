@@ -16,6 +16,28 @@ from Codemp.src.utils import bidict
 logger = logging.getLogger(__name__)
 
 
+def make_cursor_callback(workspace: VirtualWorkspace):
+    def __callback(ctl: codemp.CursorController):
+        def get_event_and_draw():
+            while event := ctl.try_recv().wait():
+                logger.debug("received remote cursor movement!")
+                if event is None:
+                    break
+
+                vbuff = workspace.buff_by_id(event.buffer)
+                if vbuff is None:
+                    logger.warning(
+                        "received a cursor event for a buffer that wasn't saved internally."
+                    )
+                    continue
+
+                draw_cursor_region(vbuff.view, event.start, event.end, event.user)
+
+        sublime.set_timeout_async(get_event_and_draw)
+
+    return __callback
+
+
 # A virtual workspace is a bridge class that aims to translate
 # events that happen to the codemp workspaces into sublime actions
 class VirtualWorkspace:
@@ -30,8 +52,8 @@ class VirtualWorkspace:
         self.codemp.fetch_users()
 
         # mapping remote ids -> local ids
-        self.__buff2view: bidict[VirtualBuffer, sublime.View] = bidict()
-        self.__id2buff: dict[str, VirtualBuffer] = {}
+        self._buff2view: bidict[VirtualBuffer, sublime.View] = bidict()
+        self._id2buff: dict[str, VirtualBuffer] = {}
         # self.id_map: dict[str, int] = {}
         # self.active_buffers: dict[int, VirtualBuffer] = {}  # local_id -> VBuff
 
@@ -44,27 +66,27 @@ class VirtualWorkspace:
         # if not get up to speed!
         self.codemp.fetch_buffers().wait()
         attached_buffers = self.codemp.buffer_list()
-        all(id in self.__id2buff for id in attached_buffers)
+        all(id in self._id2buff for id in attached_buffers)
         # TODO!
 
     def valid_buffer(self, buff: VirtualBuffer | str):
         if isinstance(buff, str):
             return self.buff_by_id(buff) is not None
 
-        return buff in self.__buff2view
+        return buff in self._buff2view
 
     def all_buffers(self) -> list[VirtualBuffer]:
-        return list(self.__buff2view.keys())
+        return list(self._buff2view.keys())
 
     def buff_by_view(self, view: sublime.View) -> Optional[VirtualBuffer]:
-        buff = self.__buff2view.inverse.get(view)
+        buff = self._buff2view.inverse.get(view)
         return buff[0] if buff is not None else None
 
     def buff_by_id(self, id: str) -> Optional[VirtualBuffer]:
-        return self.__id2buff.get(id)
+        return self._id2buff.get(id)
 
     def all_views(self) -> list[sublime.View]:
-        return list(self.__buff2view.inverse.keys())
+        return list(self._buff2view.inverse.keys())
 
     def view_by_buffer(self, buffer: VirtualBuffer) -> sublime.View:
         return buffer.view
@@ -76,14 +98,14 @@ class VirtualWorkspace:
         for view in self.all_views():
             view.close()
 
-        self.__buff2view.clear()
-        self.__id2buff.clear()
-
         self.uninstall()
         self.curctl.stop()
 
+        self._buff2view.clear()
+        self._id2buff.clear()
+
     def uninstall(self):
-        if not self.installed:
+        if not getattr(self, "installed", False):
             return
 
         self.__deactivate()
@@ -106,7 +128,7 @@ class VirtualWorkspace:
         self.installed = False
 
     def install(self):
-        if self.installed:
+        if getattr(self, "installed", False):
             return
 
         # initialise the virtual filesystem
@@ -127,7 +149,7 @@ class VirtualWorkspace:
         self.installed = True
 
     def __activate(self):
-        self.curctl.callback(self.__move_cursor_callback)
+        self.curctl.callback(make_cursor_callback(self))
         self.isactive = True
 
     def __deactivate(self):
@@ -135,11 +157,13 @@ class VirtualWorkspace:
         self.isactive = False
 
     def install_buffer(self, buff: codemp.BufferController) -> VirtualBuffer:
+        logger.debug(f"installing buffer {buff.name()}")
         view = self.window.new_file()
 
         vbuff = VirtualBuffer(buff, view)
-        self.__buff2view[vbuff] = view
-        self.__id2buff[vbuff.id] = vbuff
+        logger.debug("created virtual buffer")
+        self._buff2view[vbuff] = view
+        self._id2buff[vbuff.id] = vbuff
 
         vbuff.install(self.rootdir)
 
@@ -148,28 +172,11 @@ class VirtualWorkspace:
     def uninstall_buffer(self, vbuff: VirtualBuffer):
         vbuff.cleanup()
         buffview = self.view_by_buffer(vbuff)
-        del self.__buff2view[vbuff]
-        del self.__id2buff[vbuff.id]
+        del self._buff2view[vbuff]
+        del self._id2buff[vbuff.id]
         buffview.close()
 
     def send_cursor(self, id: str, start: Tuple[int, int], end: Tuple[int, int]):
         # we can safely ignore the promise, we don't really care if everything
         # is ok for now with the cursor.
         self.curctl.send(id, start, end)
-
-    def __move_cursor_callback(self, ctl: codemp.CursorController):
-        def get_event_and_draw():
-            while event := ctl.try_recv().wait():
-                if event is None:
-                    break
-
-                vbuff = self.buff_by_id(event.buffer)
-                if vbuff is None:
-                    logger.warning(
-                        "received a cursor event for a buffer that wasn't saved internally."
-                    )
-                    continue
-
-                draw_cursor_region(vbuff.view, event.start, event.end, event.user)
-
-        sublime.set_timeout_async(get_event_and_draw)
