@@ -20,6 +20,13 @@
     }
   },
   {
+    "caption": "Codemp: Dump Internals",
+    "command": "codemp_client_dump",
+    "args": {
+      // "server_host": "http://[::1]:50051"
+    }
+  },
+  {
     // # on_window_command, does not trigger when called from the command palette
     // # See: https://github.com/sublimehq/sublime_text/issues/2234 
   	"caption": "Codemp: Connect",
@@ -63,5 +70,21 @@
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'
   	}
+  },
+  {
+    "caption": "Codemp: Create Buffer",
+    "command": "codemp_create_buffer",
+    "arg": {
+      // 'workspace_id': 'asd'
+      // 'buffer_id': 'test'
+    }
+  },
+  {
+    "caption": "Codemp: Delete Buffer",
+    "command": "codemp_delete_buffer",
+    "arg": {
+      // 'workspace_id': 'asd'
+      // 'buffer_id': 'test'
+    }
   },
 ]
