@@ -56,45 +56,12 @@ class VirtualBuffer:
     def __init__(
         self,
         buffctl: codemp.BufferController,
-        view: sublime.View,  # noqa: F821 # type: ignore
+        view: sublime.View,
+        rootdir: str,
     ):
         self.buffctl = buffctl
         self.view = view
         self.id = self.buffctl.name()
-
-    def __hash__(self) -> int:
-        return hash(self.id)
-
-    def sync(self):
-        promise = self.buffctl.content()
-
-        def defer_sync(promise):
-            content = promise.wait()
-            populate_view(self.view, content)
-
-        sublime.set_timeout_async(lambda: defer_sync(promise))
-
-    def cleanup(self):
-        self.uninstall()
-        self.buffctl.stop()
-
-    def uninstall(self):
-        if not getattr(self, "installed", False):
-            return
-
-        self.__deactivate()
-
-        os.remove(self.tmpfile)
-
-        s = self.view.settings()
-        del s[g.CODEMP_BUFFER_TAG]
-        self.view.erase_status(g.SUBLIME_STATUS_ID)
-
-        self.installed = False
-
-    def install(self, rootdir):
-        if getattr(self, "installed", False):
-            return
 
         self.tmpfile = os.path.join(rootdir, self.id)
         open(self.tmpfile, "a").close()
@@ -108,19 +75,38 @@ class VirtualBuffer:
         s[g.CODEMP_BUFFER_TAG] = True
 
         self.sync()
-        self.__activate()
 
-        self.installed = True
-
-    def __activate(self):
         logger.info(f"registering a callback for buffer: {self.id}")
         self.buffctl.callback(make_bufferchange_cb(self))
         self.isactive = True
 
-    def __deactivate(self):
+    def __del__(self):
         logger.info(f"clearing a callback for buffer: {self.id}")
         self.buffctl.clear_callback()
+        self.buffctl.stop()
         self.isactive = False
+
+        os.remove(self.tmpfile)
+
+        def onclose(did_close):
+            if did_close:
+                logger.info(f"'{self.id}' closed successfully")
+            else:
+                logger.info(f"failed to close the view for '{self.id}'")
+
+        self.view.close(onclose)
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def sync(self):
+        promise = self.buffctl.content()
+
+        def defer_sync(promise):
+            content = promise.wait()
+            populate_view(self.view, content)
+
+        sublime.set_timeout_async(lambda: defer_sync(promise))
 
     def send_buffer_change(self, changes):
         # we do not do any index checking, and trust sublime with providing the correct

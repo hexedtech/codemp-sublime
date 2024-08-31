@@ -5,7 +5,6 @@ import logging
 import random
 from typing import Tuple
 
-import codemp
 from Codemp.src.client import client
 from Codemp.src.utils import safe_listener_detach
 from Codemp.src.utils import safe_listener_attach
@@ -60,12 +59,11 @@ class EventListener(sublime_plugin.EventListener):
 
     def on_exit(self):
         client.disconnect()
-        client.driver.stop()
+        if client.driver is not None:
+            client.driver.stop()
 
     def on_pre_close_window(self, window):
         assert client.codemp is not None
-        if not client.valid_window(window):
-            return
 
         for vws in client.all_workspaces(window):
             client.codemp.leave_workspace(vws.id)
@@ -83,12 +81,11 @@ class EventListener(sublime_plugin.EventListener):
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
     @classmethod
     def is_applicable(cls, settings):
-        logger.debug(settings.get(g.CODEMP_BUFFER_TAG, False))
         return settings.get(g.CODEMP_BUFFER_TAG, False)
 
     @classmethod
     def applies_to_primary_view_only(cls):
-        return True
+        return False
 
     def on_selection_modified_async(self):
         region = self.view.sel()[0]
@@ -106,14 +103,12 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 
     def on_activated(self):
         global TEXT_LISTENER
-        vbuff = client.buffer_from_view(self.view)
-        logging.debug(f"'{vbuff.id}' view activated!")
+        logger.debug(f"'{self.view}' view activated!")
         safe_listener_attach(TEXT_LISTENER, self.view.buffer())  # pyright: ignore
 
     def on_deactivated(self):
         global TEXT_LISTENER
-        vbuff = client.buffer_from_view(self.view)
-        logging.debug(f"'{vbuff.id}' view deactivated!")
+        logger.debug(f"'{self.view}' view deactivated!")
         safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
 
     def on_pre_close(self):
@@ -126,6 +121,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         if vws is None or vbuff is None:
             raise
 
+        client.unregister_buffer(vbuff)
         vws.uninstall_buffer(vbuff)
 
     def on_text_command(self, command_name, args):
@@ -144,8 +140,7 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
         # we'll do it by hand with .attach(buffer).
         return False
 
-    # we do the boring stuff in the async thread
-    def on_text_changed_async(self, changes):
+    def on_text_changed(self, changes):
         s = self.buffer.primary_view().settings()
         if s.get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, False):
             logger.debug("Ignoring echoing back the change.")
@@ -154,9 +149,8 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 
         vbuff = client.buffer_from_view(self.buffer.primary_view())
         if vbuff is not None:
-            # but then we block the main one for the actual sending!
             logger.debug(f"local buffer change! {vbuff.id}")
-            sublime.set_timeout(lambda: vbuff.send_buffer_change(changes))
+            vbuff.send_buffer_change(changes)
 
 
 # Client Commands:
@@ -191,7 +185,7 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
         return client.codemp is None
 
-    def run(self, server_host, user_name, password="lmaodefaultpassword"):
+    def run(self, server_host, user_name, password):
         logger.info(f"Connecting to {server_host} with user {user_name}...")
 
         def try_connect():
@@ -212,7 +206,7 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server_host" not in args:
             return SimpleTextInput(
-                ("server_host", "http://codemp.alemi.dev:50053"),
+                ("server_host", "http://codemp.dev:50053"),
                 ("user_name", f"user-{random.random()}"),
             )
 
@@ -257,41 +251,10 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "workspace_id" not in args:
-            return SimpleTextInput(("workspace_id", "workspace?"))
-
-
-# To allow for having a selection and choosing non existing workspaces
-# we do a little dance: We pass this list input handler to a TextInputHandler
-# when we select "Create New..." which adds his result to the list of possible
-# workspaces and pop itself off the stack to go back to the list handler.
-# class WorkspaceIdList(sublime_plugin.ListInputHandler):
-#     def __init__(self):
-#         assert client.codemp is not None  # the command should not be available
-
-#         # at the moment, the client can't give us a full list of existing workspaces
-#         # so a textinputhandler would be more appropriate. but we keep this for the future
-
-#         self.add_entry_text = "* add entry..."
-#         self.list = client.codemp.active_workspaces()
-#         self.list.sort()
-#         self.list.append(self.add_entry_text)
-#         self.preselected = None
-
-#     def name(self):
-#         return "workspace_id"
-
-#     def placeholder(self):
-#         return "Workspace"
-
-#     def list_items(self):
-#         if self.preselected is not None:
-#             return (self.list, self.preselected)
-#         else:
-#             return self.list
-
-#     def next_input(self, args):
-#         if args["workspace_id"] == self.add_entry_text:
-#             return AddListEntry(self)
+            list = client.codemp.list_workspaces(True, True)
+            return SimpleListInput(
+                ("workspace_id", list.wait()),
+            )
 
 
 # Leave Workspace Command
@@ -305,9 +268,11 @@ class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
             vws = client.workspace_from_id(workspace_id)
             if vws is not None:
                 client.uninstall_workspace(vws)
+        else:
+            logger.error(f"could not leave the workspace '{workspace_id}'")
 
     def input(self, args):
-        if "id" not in args:
+        if "workspace_id" not in args:
             return ActiveWorkspacesIdList()
 
 
@@ -331,8 +296,8 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
         assert vws is not None
 
         # is the buffer already installed?
-        if vws.valid_buffer(buffer_id):
-            logger.debug("buffer already installed!")
+        if buffer_id in vws.codemp.buffer_list():
+            logger.info("buffer already installed!")
             return  # do nothing.
 
         if buffer_id not in vws.codemp.filetree(filter=buffer_id):
@@ -543,6 +508,24 @@ class SimpleTextInput(sublime_plugin.TextInputHandler):
                 return SimpleTextInput(*self.next_inputs)
 
 
+class SimpleListInput(sublime_plugin.ListInputHandler):
+    def __init__(self, *args: Tuple[str, list]):
+        self.argname = args[0][0]
+        self.list = args[0][1]
+        self.next_inputs = args[1:]
+
+    def name(self):
+        return self.argname
+
+    def list_items(self):
+        return self.list
+
+    def next_input(self, args):
+        if len(self.next_inputs) > 0:
+            if self.next_inputs[0][0] not in args:
+                return SimpleListInput(*self.next_inputs)
+
+
 class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):
     def __init__(self, window=None, buffer_list=False, buffer_text=False):
         self.window = window
@@ -560,6 +543,40 @@ class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):
             return BufferIdList(args["workspace_id"])
         elif self.buffer_text:
             return SimpleTextInput(("buffer_id", "new buffer"))
+
+
+# To allow for having a selection and choosing non existing workspaces
+# we do a little dance: We pass this list input handler to a TextInputHandler
+# when we select "Create New..." which adds his result to the list of possible
+# workspaces and pop itself off the stack to go back to the list handler.
+class WorkspaceIdList(sublime_plugin.ListInputHandler):
+    def __init__(self):
+        assert client.codemp is not None  # the command should not be available
+
+        # at the moment, the client can't give us a full list of existing workspaces
+        # so a textinputhandler would be more appropriate. but we keep this for the future
+
+        self.add_entry_text = "* add entry..."
+        self.list = client.codemp.list_workspaces(True, True).wait()
+        self.list.sort()
+        self.list.append(self.add_entry_text)
+        self.preselected = None
+
+    def name(self):
+        return "workspace_id"
+
+    def placeholder(self):
+        return "Workspace"
+
+    def list_items(self):
+        if self.preselected is not None:
+            return (self.list, self.preselected)
+        else:
+            return self.list
+
+    def next_input(self, args):
+        if args["workspace_id"] == self.add_entry_text:
+            return AddListEntry(self)
 
 
 class BufferIdList(sublime_plugin.ListInputHandler):
