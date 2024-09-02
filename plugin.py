@@ -276,6 +276,63 @@ class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
             return ActiveWorkspacesIdList()
 
 
+class CodempInviteToWorkspaceCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self) -> bool:
+        return client.codemp is not None and len(client.all_workspaces(self.window)) > 0
+
+    def run(self, workspace_id: str, user: str):
+        assert client.codemp is not None
+        client.codemp.invite_to_workspace(workspace_id, user)
+        logger.debug(f"invite sent to user {user} for workspace {workspace_id}.")
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            wslist = client.codemp.list_workspaces(True, False)
+            return SimpleListInput(
+                ("workspace_id", wslist.wait()), ("user", "invitee's username")
+            )
+
+        if "user" not in args:
+            return SimpleTextInput(("user", "invitee's username"))
+
+
+class CodempCreateWorkspaceCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        return client.codemp is not None
+
+    def run(self, workspace_id: str):
+        assert client.codemp is not None
+        client.codemp.create_workspace(workspace_id)
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            return SimpleTextInput(("workspace_id", "new workspace"))
+
+
+class CodempDeleteWorkspaceCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self):
+        return client.codemp is not None and len(client.all_workspaces(self.window)) > 0
+
+    def run(self, workspace_id: str):
+        assert client.codemp is not None
+
+        vws = client.workspace_from_id(workspace_id)
+        if vws is not None:
+            if not sublime.ok_cancel_dialog(
+                "You are currently attached to '{workspace_id}'.\n\
+                Do you want to detach and delete it?",
+                ok_title="yes",
+                title="Delete Workspace?",
+            ):
+                return
+            if not client.codemp.leave_workspace(workspace_id):
+                logger.debug("error while leaving the workspace:")
+                return
+            client.uninstall_workspace(vws)
+
+        client.codemp.delete_workspace(workspace_id)
+
+
 # WORKSPACE COMMANDS
 #############################################################################
 

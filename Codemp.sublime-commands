@@ -56,6 +56,28 @@
     }
   },
   {
+    "caption": "Codemp: Invite To Workspace",
+    "command": "codemp_invite_to_workspace",
+    "arg": {
+      // "id": 'lmaaaao'
+      // "user": 'lupo'
+    }
+  },
+  {
+    "caption": "Codemp: Create Workspace",
+    "command": "codemp_create_workspace",
+    "arg": {
+      // "id": 'lmaaaao'
+    }
+  },
+  {
+    "caption": "Codemp: Delete Workspace",
+    "command": "codemp_delete_workspace",
+    "arg": {
+      // "id": 'lmaaaao'
+    }
+  },
+  {
     "caption": "Codemp: Join Buffer",
     "command": "codemp_join_buffer",
     "arg": {
