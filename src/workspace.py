@@ -9,7 +9,7 @@ import logging
 import codemp
 from Codemp.src import globals as g
 from Codemp.src.buffers import VirtualBuffer
-from Codemp.src.utils import draw_cursor_region
+from Codemp.src.utils import draw_cursor_region, safe_listener_attach, sublime_plugin
 from Codemp.src.utils import bidict
 
 
@@ -51,7 +51,6 @@ class VirtualWorkspace:
         self.codemp.fetch_buffers()
         self.codemp.fetch_users()
 
-        self._buff2view: bidict[VirtualBuffer, sublime.View] = bidict()
         self._id2buff: dict[str, VirtualBuffer] = {}
 
         tmpdir = tempfile.mkdtemp(prefix="codemp_")
@@ -71,9 +70,24 @@ class VirtualWorkspace:
         self.isactive = True
 
     def __del__(self):
+        logger.debug("workspace destroyed!")
+
+    def __hash__(self) -> int:
+        # so we can use these as dict keys!
+        return hash(self.id)
+
+    def uninstall(self):
         self.curctl.clear_callback()
         self.isactive = False
         self.curctl.stop()
+
+        for vbuff in self._id2buff.values():
+            vbuff.uninstall()
+            if not self.codemp.detach(vbuff.id):
+                logger.warning(
+                    f"could not detach from '{vbuff.id}' for workspace '{self.id}'."
+                )
+        self._id2buff.clear()
 
         proj: dict = self.window.project_data()  # type:ignore
         if proj is None:
@@ -91,34 +105,29 @@ class VirtualWorkspace:
         logger.info(f"cleaning up virtual workspace '{self.id}'")
         shutil.rmtree(self.rootdir, ignore_errors=True)
 
-        if not all(self.codemp.detach(buff) for buff in self._id2buff.keys()):
-            logger.warning(
-                f"could not detach from all buffers for workspace '{self.id}'."
-            )
-        self._id2buff.clear()
-
-    def __hash__(self) -> int:
-        # so we can use these as dict keys!
-        return hash(self.id)
-
     def all_buffers(self) -> list[VirtualBuffer]:
         return list(self._id2buff.values())
 
     def buff_by_id(self, id: str) -> Optional[VirtualBuffer]:
         return self._id2buff.get(id)
 
-    def install_buffer(self, buff: codemp.BufferController) -> VirtualBuffer:
+    def install_buffer(
+        self, buff: codemp.BufferController, listener: sublime_plugin.TextChangeListener
+    ) -> VirtualBuffer:
         logger.debug(f"installing buffer {buff.name()}")
 
         view = self.window.new_file()
         vbuff = VirtualBuffer(buff, view, self.rootdir)
         self._id2buff[vbuff.id] = vbuff
 
+        vbuff.sync(listener)
+
         return vbuff
 
     def uninstall_buffer(self, vbuff: VirtualBuffer):
         del self._id2buff[vbuff.id]
         self.codemp.detach(vbuff.id)
+        vbuff.uninstall()
 
     def send_cursor(self, id: str, start: Tuple[int, int], end: Tuple[int, int]):
         # we can safely ignore the promise, we don't really care if everything

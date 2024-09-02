@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 # bidir: VirtualBuffer <-> VirtualWorkspace
 # bidir: VirtualBuffer <-> Sublime.View
 # bidir: VirtualWorkspace <-> Sublime.Window
-def log_async(msg):
-    sublime.set_timeout_async(lambda: logger.log(logger.level, msg))
+# def log_async(msg):
+#     sublime.set_timeout_async(lambda: logger.log(logger.level, msg))
 
 
 class VirtualClient:
@@ -36,11 +36,12 @@ class VirtualClient:
 
         self._view2buff: dict[sublime.View, VirtualBuffer] = {}
         self._buff2workspace: bidict[VirtualBuffer, VirtualWorkspace] = bidict()
-        # self._workspace2window: bidict[VirtualWorkspace, sublime.Window] = bidict()
         self._workspace2window: dict[VirtualWorkspace, sublime.Window] = bidict()
 
     def dump(self):
         logger.debug("CLIENT STATUS:")
+        logger.debug(f"codemp: {self.codemp is not None}")
+        logger.debug(f"drived: {self.driver is not None}")
         logger.debug("WORKSPACES:")
         logger.debug(f"{self._id2workspace}")
         logger.debug(f"{self._workspace2window}")
@@ -103,6 +104,7 @@ class VirtualClient:
         logger.info("disconnecting from the current client")
         # for each workspace tell it to clean up after itself.
         for vws in self.all_workspaces():
+            self.uninstall_workspace(vws)
             self.codemp.leave_workspace(vws.id)
 
         self._id2workspace.clear()
@@ -110,6 +112,9 @@ class VirtualClient:
         self._buff2workspace.clear()
         self._view2buff.clear()
         self._workspace2window.clear()
+
+        self.driver.stop()
+        self.driver = None
         self.codemp = None
 
     def connect(self, host: str, user: str, password: str):
@@ -119,7 +124,11 @@ class VirtualClient:
 
         if self.driver is None:
             self.driver = codemp.init()
-            codemp.set_logger(log_async, False)
+            logger.debug("registering logger callback...")
+            if not codemp.set_logger(lambda msg: logger.debug(msg), False):
+                logger.debug(
+                    "could not register the logger... If reconnecting it's ok, the previous logger is still registered"
+                )
 
         self.codemp = codemp.connect(host, user, password).wait()
         id = self.codemp.user_id()
@@ -140,7 +149,8 @@ class VirtualClient:
         del self._id2workspace[vws.id]
         for vbuff in self.all_buffers(vws):
             self.unregister_buffer(vbuff)
-        del vws
+
+        vws.uninstall()
         # self._buff2workspace.inverse_del(vws) - if we delete all straight
         # keys the last delete will remove also the empty key.
 

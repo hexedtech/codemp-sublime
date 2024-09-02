@@ -6,7 +6,7 @@ import logging
 
 import codemp
 from Codemp.src import globals as g
-from Codemp.src.utils import populate_view
+from Codemp.src.utils import populate_view, safe_listener_attach, safe_listener_detach
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class VirtualBuffer:
         self.tmpfile = os.path.join(rootdir, self.id)
         open(self.tmpfile, "a").close()
 
-        # self.view.set_scratch(True)
+        self.view.set_scratch(True)
         self.view.set_name(self.id)
         self.view.retarget(self.tmpfile)
 
@@ -74,13 +74,17 @@ class VirtualBuffer:
         self.view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
         s[g.CODEMP_BUFFER_TAG] = True
 
-        self.sync()
-
         logger.info(f"registering a callback for buffer: {self.id}")
         self.buffctl.callback(make_bufferchange_cb(self))
         self.isactive = True
 
     def __del__(self):
+        logger.debug("__del__ buffer called.")
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def uninstall(self):
         logger.info(f"clearing a callback for buffer: {self.id}")
         self.buffctl.clear_callback()
         self.buffctl.stop()
@@ -96,15 +100,14 @@ class VirtualBuffer:
 
         self.view.close(onclose)
 
-    def __hash__(self) -> int:
-        return hash(self.id)
-
-    def sync(self):
+    def sync(self, text_listener):
         promise = self.buffctl.content()
 
         def defer_sync(promise):
             content = promise.wait()
+            safe_listener_detach(text_listener)
             populate_view(self.view, content)
+            safe_listener_attach(text_listener, self.view.buffer())
 
         sublime.set_timeout_async(lambda: defer_sync(promise))
 
