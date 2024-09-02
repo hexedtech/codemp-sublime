@@ -3,7 +3,7 @@ import sublime
 import sublime_plugin
 import logging
 import random
-from typing import Tuple
+from typing import Tuple, Union
 
 from Codemp.src.client import client
 from Codemp.src.utils import safe_listener_detach
@@ -14,7 +14,7 @@ LOG_LEVEL = logging.DEBUG
 handler = logging.StreamHandler()
 handler.setFormatter(
     logging.Formatter(
-        fmt="<{thread}/{threadName}>[codemp] [{name} :: {funcName}] {levelname}: {message}",
+        fmt="<{thread}/{threadName}> {levelname} [{name} :: {funcName}] {message}",
         style="{",
     )
 )
@@ -113,13 +113,15 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 
     def on_pre_close(self):
         if self.view == sublime.active_window().active_view():
+            logger.debug("closing active view")
             global TEXT_LISTENER
             safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
 
         vws = client.workspace_from_view(self.view)
         vbuff = client.buffer_from_view(self.view)
         if vws is None or vbuff is None:
-            raise
+            logger.debug("no matching workspace or buffer.")
+            return
 
         client.unregister_buffer(vbuff)
         vws.uninstall_buffer(vbuff)
@@ -227,6 +229,9 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
 
     def run(self, workspace_id):
         assert client.codemp is not None
+        if workspace_id is None:
+            return
+
         logger.info(f"Joining workspace: '{workspace_id}'...")
         promise = client.codemp.join_workspace(workspace_id)
         active_window = sublime.active_window()
@@ -384,7 +389,8 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
                 logging.error(f"error when attaching to buffer '{id}':\n\n {e}")
                 sublime.error_message(f"Could not attach to buffer '{buffer_id}'")
                 return
-            vbuff = vws.install_buffer(buff_ctl)
+            global TEXT_LISTENER
+            vbuff = vws.install_buffer(buff_ctl, TEXT_LISTENER)
             client.register_buffer(vws, vbuff)  # we need to keep track of it.
 
             # TODO! if the view is already active calling focus_view()
@@ -472,7 +478,7 @@ class CodempCreateBufferCommand(sublime_plugin.WindowCommand):
 
 class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
-        return len(client.all_buffers()) > 0
+        return client.codemp is not None and len(client.codemp.active_workspaces()) > 0
 
     def run(self, workspace_id, buffer_id):
         vws = client.workspace_from_id(workspace_id)
@@ -504,7 +510,9 @@ class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
             try:
                 vws.codemp.delete(buffer_id).wait()
             except Exception as e:
-                logging.error(f"error when deleting the buffer '{id}':\n\n {e}", True)
+                logging.error(
+                    f"error when deleting the buffer '{buffer_id}':\n\n {e}", True
+                )
                 return
 
         vbuff = client.buffer_from_id(buffer_id)
@@ -544,11 +552,12 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 # Input handlers
 ############################################################
 class SimpleTextInput(sublime_plugin.TextInputHandler):
-    def __init__(self, *args: Tuple[str, str]):
+    def __init__(self, *args: Tuple[str, Union[str, list]], next_is_list=False):
         logging.debug(f"why isn't the text input working? {args}")
         self.argname = args[0][0]
         self.default = args[0][1]
         self.next_inputs = args[1:]
+        self.switch_next = next_is_list
 
     def initial_text(self):
         return self.default
@@ -557,16 +566,16 @@ class SimpleTextInput(sublime_plugin.TextInputHandler):
         return self.argname
 
     def next_input(self, args):
-        logging.debug(
-            f"why isn't the text input working? {self.argname}, {self.default}"
-        )
         if len(self.next_inputs) > 0:
             if self.next_inputs[0][0] not in args:
-                return SimpleTextInput(*self.next_inputs)
+                if isinstance(self.next_inputs[0][1], list):
+                    return SimpleListInput(*self.next_inputs)
+                else:
+                    return SimpleTextInput(*self.next_inputs)
 
 
 class SimpleListInput(sublime_plugin.ListInputHandler):
-    def __init__(self, *args: Tuple[str, list]):
+    def __init__(self, *args: Tuple[str, Union[list, str]]):
         self.argname = args[0][0]
         self.list = args[0][1]
         self.next_inputs = args[1:]
@@ -580,7 +589,10 @@ class SimpleListInput(sublime_plugin.ListInputHandler):
     def next_input(self, args):
         if len(self.next_inputs) > 0:
             if self.next_inputs[0][0] not in args:
-                return SimpleListInput(*self.next_inputs)
+                if isinstance(self.next_inputs[0][1], str):
+                    return SimpleTextInput(*self.next_inputs)
+                else:
+                    return SimpleListInput(*self.next_inputs)
 
 
 class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):
