@@ -172,14 +172,6 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
 #   replace_text:       swaps the content of a view with the given text.
 
 
-class CodempClientDumpCommand(sublime_plugin.WindowCommand):
-    def is_enabled(self) -> bool:
-        return super().is_enabled()
-
-    def run(self):
-        client.dump()
-
-
 # Client Commands
 #############################################################################
 # Connect Command
@@ -210,6 +202,18 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
             return SimpleTextInput(
                 ("server_host", "http://codemp.dev:50053"),
                 ("user_name", f"user-{random.random()}"),
+                ("password", "password?"),
+            )
+
+        if "user_name" not in args:
+            return SimpleTextInput(
+                ("user_name", f"user-{random.random()}"),
+                ("password", "password?"),
+            )
+
+        if "password" not in args:
+            return SimpleTextInput(
+                ("password", "password?"),
             )
 
 
@@ -316,7 +320,7 @@ class CodempCreateWorkspaceCommand(sublime_plugin.WindowCommand):
 
 class CodempDeleteWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
-        return client.codemp is not None and len(client.all_workspaces(self.window)) > 0
+        return client.codemp is not None
 
     def run(self, workspace_id: str):
         assert client.codemp is not None
@@ -336,6 +340,11 @@ class CodempDeleteWorkspaceCommand(sublime_plugin.WindowCommand):
             client.uninstall_workspace(vws)
 
         client.codemp.delete_workspace(workspace_id)
+
+    def input(self, args):
+        workspaces = client.codemp.list_workspaces(True, False)  # noqa: F841
+        if "workspace_id" not in args:
+            return SimpleListInput(("workspace_id", workspaces.wait()))
 
 
 # WORKSPACE COMMANDS

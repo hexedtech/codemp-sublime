@@ -20,13 +20,6 @@
     }
   },
   {
-    "caption": "Codemp: Dump Internals",
-    "command": "codemp_client_dump",
-    "args": {
-      // "server_host": "http://[::1]:50051"
-    }
-  },
-  {
     // # on_window_command, does not trigger when called from the command palette
     // # See: https://github.com/sublimehq/sublime_text/issues/2234 
   	"caption": "Codemp: Connect",
