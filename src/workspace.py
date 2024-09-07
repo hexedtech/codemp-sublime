@@ -25,7 +25,7 @@ def make_cursor_callback(workspace: VirtualWorkspace):
                 vbuff = workspace.buff_by_id(event.buffer)
                 if vbuff is None:
                     logger.warning(
-                        "received a cursor event for a buffer that wasn't saved internally."
+                        f"{workspace.id} received a cursor event for a buffer that wasn't saved internally."
                     )
                     continue
 
