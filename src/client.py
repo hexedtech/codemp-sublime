@@ -5,11 +5,10 @@ from typing import Optional
 import sublime
 import logging
 
-import codemp
-from Codemp.src import globals as g
-from Codemp.src.workspace import VirtualWorkspace
-from Codemp.src.buffers import VirtualBuffer
-from Codemp.src.utils import bidict
+from ..lib import codemp
+from .workspace import VirtualWorkspace
+from .buffers import VirtualBuffer
+from .utils import bidict
 
 logger = logging.getLogger(__name__)
 

@@ -4,9 +4,9 @@ import sublime
 import os
 import logging
 
-import codemp
-from Codemp.src import globals as g
-from Codemp.src.utils import populate_view, safe_listener_attach, safe_listener_detach
+from . import globals as g
+from .utils import populate_view, safe_listener_attach, safe_listener_detach
+from ..lib import codemp
 
 logger = logging.getLogger(__name__)
 

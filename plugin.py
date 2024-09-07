@@ -5,10 +5,10 @@ import logging
 import random
 from typing import Tuple, Union
 
-from Codemp.src.client import client
-from Codemp.src.utils import safe_listener_detach
-from Codemp.src.utils import safe_listener_attach
-from Codemp.src import globals as g
+from .src.client import client
+from .src.utils import safe_listener_detach
+from .src.utils import safe_listener_attach
+from .src import globals as g
 
 LOG_LEVEL = logging.DEBUG
 handler = logging.StreamHandler()

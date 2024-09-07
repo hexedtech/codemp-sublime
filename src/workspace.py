@@ -6,12 +6,10 @@ import shutil
 import tempfile
 import logging
 
-import codemp
-from Codemp.src import globals as g
-from Codemp.src.buffers import VirtualBuffer
-from Codemp.src.utils import draw_cursor_region, safe_listener_attach, sublime_plugin
-from Codemp.src.utils import bidict
-
+from ..lib import codemp
+from . import globals as g
+from .buffers import VirtualBuffer
+from .utils import draw_cursor_region, sublime_plugin
 
 logger = logging.getLogger(__name__)
 
