@@ -1,4 +1,4 @@
-[![codemp](https://codemp.dev/static/banner.png)](https://codemp.dev)
+[![codemp](https://code.mp/static/banner.png)](https://code.mp)
 
 > `codemp` is a **collaborative** text editing solution to work remotely.
 
@@ -7,6 +7,9 @@ as well as a remote virtual workspace for you and your team.
 
 # Codemp-Sublime
 This is the reference [sublime](https://sublimetext.com) plugin for `codemp` maintained by [hexedtech](https://hexed.technology)
+
+> [!IMPORTANT]
+> The plugin is in active development. Expect frequent changes.
 
 # Installation
 ## Package Control
@@ -53,7 +56,7 @@ if not present (either as simple text input or selecting from a list).
 
 |	command label | arguments | description |
 | --- | --- | --- |
-| `Codemp: Connect` | `[host]` `[user]` `[password]` | to connect to a `codemp` server specified by `host` (defaults to the reference `http://codemp.dev` hexedtech server).
+| `Codemp: Connect` | `[host]` `[user]` `[password]` | to connect to a `codemp` server specified by `host` (defaults to the reference `http://code.mp` hexedtech server).
 
 Once connected the following commands will become available:
 

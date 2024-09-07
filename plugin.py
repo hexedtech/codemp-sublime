@@ -200,7 +200,7 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "server_host" not in args:
             return SimpleTextInput(
-                ("server_host", "http://codemp.dev:50053"),
+                ("server_host", "http://code.mp:50053"),
                 ("user_name", f"user-{random.random()}"),
                 ("password", "password?"),
             )
