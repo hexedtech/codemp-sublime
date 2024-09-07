@@ -22,7 +22,7 @@ Currently this package is not on the sublime package repository.
 But it can still be installed by package control.
 * Open the command palette in Sublime (`Shift+Ctrl+P` on Windows/Linux or `Shift+⌘+P` on MacOS)
 * select the `Package Control: Add Repository` command and paste `https://github.com/hexedtech/codemp-sublime.git` into the quick panel
-* open the command palette again and select `Package Control: Satisfy Packages` or restart Sublime to force the installation.
+* open the command palette again and select `Package Control: Install Package` and select `codemp-sublime`.
 
 ## Manual
 Alternatively you can simply `git clone` this repository into your `Packages` folder:
