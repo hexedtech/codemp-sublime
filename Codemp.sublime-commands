@@ -32,7 +32,7 @@
   	"caption": "Codemp: Connect",
   	"command": "codemp_connect",
   	"args": {
-      // "server_host": "http://[::1]:50051"
+      "server_host": "http://codemp.dev:50053",
   	}
   },
   {

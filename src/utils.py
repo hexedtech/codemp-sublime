@@ -1,7 +1,7 @@
 import sublime
 import sublime_plugin
 from typing import Dict, Generic, TypeVar
-from Codemp.src import globals as g
+from . import globals as g
 
 # bidirectional dictionary so that we can have bidirectional
 # lookup!
