@@ -37,7 +37,7 @@ You will need to keep the package up to date yourself.
 * Joining a workspace will materialize a virtual file system mimicking the remote one as if it were a project folder.
 
 
-## quick start
+## Quick start
  * first connect to server with `Codemp: Connect`
  * then join a workspace with `Codemp: Join Workspace`
  * attach directly to a buffer with `Codemp: Join Buffer` and start typing away!
