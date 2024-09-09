@@ -12,6 +12,9 @@ This is the reference [sublime](https://sublimetext.com) plugin for `codemp` mai
 > The plugin is in active development. Expect frequent changes.
 
 # Installation
+> [!IMPORTANT]
+> Currently the python bindings are only available for macOS, this will change shortly.
+
 ## Package Control
 The fastest and easiest way to install Codemp is via Package Control, the de-facto package manager for Sublime Text. 
 Package Control not only installs your packages for you, it also ensures that they are kept up to date 
