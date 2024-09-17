@@ -1,24 +1,16 @@
 from __future__ import annotations
 from typing import Optional
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from ..workspace.workspace import VirtualWorkspace
 
 import sublime
 import logging
 
-import codemp
-from .workspace import VirtualWorkspace
-from .buffers import VirtualBuffer
-from .utils import bidict
+from ..utils import bidict
 
 logger = logging.getLogger(__name__)
-
-# the client will be responsible to keep track of everything!
-# it will need 3 bidirectional dictionaries and 2 normal ones
-# normal: workspace_id -> VirtualWorkspaces
-# normal: buffer_id -> VirtualBuffer
-# bidir: VirtualBuffer <-> VirtualWorkspace
-# bidir: VirtualBuffer <-> Sublime.View
-# bidir: VirtualWorkspace <-> Sublime.Window
 
 
 class VirtualClient:
@@ -33,53 +25,6 @@ class VirtualClient:
         self._view2buff: dict[sublime.View, VirtualBuffer] = {}
         self._buff2workspace: bidict[VirtualBuffer, VirtualWorkspace] = bidict()
         self._workspace2window: dict[VirtualWorkspace, sublime.Window] = {}
-
-    def all_workspaces(
-        self, window: Optional[sublime.Window] = None
-    ) -> list[VirtualWorkspace]:
-        if window is None:
-            return list(self._workspace2window.keys())
-        else:
-            return [
-                ws
-                for ws in self._workspace2window
-                if self._workspace2window[ws] == window
-            ]
-
-    def workspace_from_view(self, view: sublime.View) -> Optional[VirtualWorkspace]:
-        buff = self._view2buff.get(view, None)
-        return self.workspace_from_buffer(buff) if buff is not None else None
-
-    def workspace_from_buffer(self, vbuff: VirtualBuffer) -> Optional[VirtualWorkspace]:
-        return self._buff2workspace.get(vbuff, None)
-
-    def workspace_from_id(self, id: str) -> Optional[VirtualWorkspace]:
-        return self._id2workspace.get(id)
-
-    def all_buffers(
-        self, workspace: Optional[VirtualWorkspace | str] = None
-    ) -> list[VirtualBuffer]:
-        if workspace is None:
-            return list(self._id2buffer.values())
-        elif isinstance(workspace, str):
-            workspace = client._id2workspace[workspace]
-            return self._buff2workspace.inverse.get(workspace, [])
-        else:
-            return self._buff2workspace.inverse.get(workspace, [])
-
-    def buffer_from_view(self, view: sublime.View) -> Optional[VirtualBuffer]:
-        return self._view2buff.get(view)
-
-    def buffer_from_id(self, id: str) -> Optional[VirtualBuffer]:
-        return self._id2buffer.get(id)
-
-    def view_from_buffer(self, buff: VirtualBuffer) -> sublime.View:
-        return buff.view
-
-    def register_buffer(self, workspace: VirtualWorkspace, buffer: VirtualBuffer):
-        self._buff2workspace[buffer] = workspace
-        self._id2buffer[buffer.id] = buffer
-        self._view2buff[buffer.view] = buffer
 
     def disconnect(self):
         if self.codemp is None:
@@ -140,11 +85,6 @@ class VirtualClient:
             self.unregister_buffer(vbuff)
 
         vws.uninstall()
-
-    def unregister_buffer(self, buffer: VirtualBuffer):
-        del self._buff2workspace[buffer]
-        del self._id2buffer[buffer.id]
-        del self._view2buff[buffer.view]
 
     def workspaces_in_server(self):
         return self.codemp.active_workspaces() if self.codemp else []
