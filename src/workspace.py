@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Tuple
 
+from listeners import CodempClientTextChangeListener
 import sublime
 import shutil
 import tempfile
@@ -9,7 +10,7 @@ import logging
 from ..lib import codemp
 from . import globals as g
 from .buffers import VirtualBuffer
-from .utils import draw_cursor_region, sublime_plugin
+from .utils import draw_cursor_region
 
 logger = logging.getLogger(__name__)
 
@@ -110,9 +111,9 @@ class VirtualWorkspace:
         return self._id2buff.get(id)
 
     def install_buffer(
-        self, buff: codemp.BufferController, listener: sublime_plugin.TextChangeListener
+        self, buff: codemp.BufferController, listener: CodempClientTextChangeListener
     ) -> VirtualBuffer:
-        logger.debug(f"installing buffer {buff.name()}")
+        logger.debug(f"installing buffer {buff.path()}")
 
         view = self.window.new_file()
         vbuff = VirtualBuffer(buff, view, self.rootdir)
