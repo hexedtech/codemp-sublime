@@ -32,20 +32,7 @@ class VirtualClient:
 
         self._view2buff: dict[sublime.View, VirtualBuffer] = {}
         self._buff2workspace: bidict[VirtualBuffer, VirtualWorkspace] = bidict()
-        self._workspace2window: dict[VirtualWorkspace, sublime.Window] = bidict()
-
-    def dump(self):
-        logger.debug("CLIENT STATUS:")
-        logger.debug(f"codemp: {self.codemp is not None}")
-        logger.debug(f"drived: {self.driver is not None}")
-        logger.debug("WORKSPACES:")
-        logger.debug(f"{self._id2workspace}")
-        logger.debug(f"{self._workspace2window}")
-        logger.debug(f"{self._buff2workspace}")
-        logger.debug(f"{self._buff2workspace.inverse}")
-        logger.debug("VIEWS")
-        logger.debug(f"{self._view2buff}")
-        logger.debug(f"{self._id2buffer}")
+        self._workspace2window: dict[VirtualWorkspace, sublime.Window] = {}
 
     def all_workspaces(
         self, window: Optional[sublime.Window] = None
@@ -127,7 +114,12 @@ class VirtualClient:
                     "could not register the logger... If reconnecting it's ok, the previous logger is still registered"
                 )
 
-        self.codemp = codemp.connect(host, user, password).wait()
+        config = codemp.get_default_config()
+        config.username = user
+        config.host = host
+        config.password = password
+
+        self.codemp = codemp.connect(config).wait()
         id = self.codemp.user_id()
         logger.debug(f"Connected to '{host}' as user {user} (id: {id})")
 
@@ -148,8 +140,6 @@ class VirtualClient:
             self.unregister_buffer(vbuff)
 
         vws.uninstall()
-        # self._buff2workspace.inverse_del(vws) - if we delete all straight
-        # keys the last delete will remove also the empty key.
 
     def unregister_buffer(self, buffer: VirtualBuffer):
         del self._buff2workspace[buffer]
