@@ -12,7 +12,6 @@ from .utils import bidict
 
 logger = logging.getLogger(__name__)
 
-
 # the client will be responsible to keep track of everything!
 # it will need 3 bidirectional dictionaries and 2 normal ones
 # normal: workspace_id -> VirtualWorkspaces
@@ -20,8 +19,6 @@ logger = logging.getLogger(__name__)
 # bidir: VirtualBuffer <-> VirtualWorkspace
 # bidir: VirtualBuffer <-> Sublime.View
 # bidir: VirtualWorkspace <-> Sublime.Window
-# def log_async(msg):
-#     sublime.set_timeout_async(lambda: logger.log(logger.level, msg))
 
 
 class VirtualClient:
@@ -111,9 +108,10 @@ class VirtualClient:
         self._buff2workspace.clear()
         self._view2buff.clear()
         self._workspace2window.clear()
-
-        self.driver.stop()
-        self.driver = None
+    
+        if self.driver is not None:
+            self.driver.stop()
+            self.driver = None
         self.codemp = None
 
     def connect(self, host: str, user: str, password: str):
