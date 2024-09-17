@@ -5,10 +5,12 @@ import sublime_plugin
 import logging
 import random
 
-from .src.client import client
+from ...lib import codemp
+from ..core.session import session
+from ..core.registry import workspaces
+
 from input_handlers import SimpleTextInput
 from input_handlers import SimpleListInput
-from input_handlers import ActiveWorkspacesIdList
 
 logger = logging.getLogger(__name__)
 
@@ -17,19 +19,21 @@ logger = logging.getLogger(__name__)
 # Connect Command
 class CodempConnectCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
-        return client.codemp is None
+        return True
 
     def run(self, server_host, user_name, password):  # pyright: ignore[reportIncompatibleMethodOverride]
-        logger.info(f"Connecting to {server_host} with user {user_name}...")
         def _():
             try:
-                client.connect(server_host, user_name, password)
+                config = codemp.get_default_config()
+                config.host = server_host
+                config.username = user_name
+                config.password = password
+                session.connect(config)
             except Exception as e:
                 sublime.error_message(
                     "Could not connect:\n Make sure the server is up\n\
                     and your credentials are correct."
                 )
-
         sublime.set_timeout_async(_)
 
     def input_description(self):
@@ -58,10 +62,13 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
 # Disconnect Command
 class CodempDisconnectCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
-        return client.codemp is not None
+        return session.is_active()
 
     def run(self):
-        client.disconnect()
+        for ws in workspaces.lookup():
+            ws.uninstall()
+
+        session.disconnect()
 
 
 # Join Workspace Command
@@ -108,7 +115,8 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
 # Leave Workspace Command
 class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
-        return client.codemp is not None and len(client.all_workspaces(self.window)) > 0
+        return client.codemp is not None and \
+        len(client.all_workspaces(self.window)) > 0
 
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
         assert client.codemp is not None
@@ -176,7 +184,8 @@ class CodempDeleteWorkspaceCommand(sublime_plugin.WindowCommand):
                 return
             if not client.codemp.leave_workspace(workspace_id):
                 logger.debug("error while leaving the workspace:")
-                return
+                raise RuntimeError("error while leaving the workspace")
+
             client.uninstall_workspace(vws)
 
         client.codemp.delete_workspace(workspace_id)

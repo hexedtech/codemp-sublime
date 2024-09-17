@@ -1,25 +1,76 @@
+# pyright: reportIncompatibleMethodOverride=false
 import sublime
 import sublime_plugin
 import logging
 
-from .src.client import client
-from .src.utils import safe_listener_attach
-from .src.utils import safe_listener_detach
-from .src import globals as g
+from lib import codemp
+from .plugin.utils import safe_listener_detach
+from .plugin.core.session import session
+from .plugin.core.registry import workspaces
+from .plugin.core.registry import buffers
 
+from .plugin.commands.client import CodempConnectCommand
+from .plugin.commands.client import CodempDisconnectCommand
+from .plugin.commands.client import CodempCreateWorkspaceCommand
+from .plugin.commands.client import CodempDeleteWorkspaceCommand
+from .plugin.commands.client import CodempJoinWorkspaceCommand
+from .plugin.commands.client import CodempLeaveWorkspaceCommand
+from .plugin.commands.client import CodempInviteToWorkspaceCommand
+
+from .plugin.commands.workspace import CodempCreateBufferCommand
+from .plugin.commands.workspace import CodempDeleteBufferCommand
+from .plugin.commands.workspace import CodempJoinBufferCommand
+from .plugin.commands.workspace import CodempLeaveBufferCommand
+
+LOG_LEVEL = logging.DEBUG
+handler = logging.StreamHandler()
+handler.setFormatter(
+    logging.Formatter(
+        fmt="<{thread}/{threadName}> {levelname} [{name} :: {funcName}] {message}",
+        style="{",
+    )
+)
+package_logger = logging.getLogger(__package__)
+package_logger.setLevel(LOG_LEVEL)
+package_logger.propagate = False
 logger = logging.getLogger(__name__)
 
-
-# Listeners
+# Initialisation and Deinitialisation
 ##############################################################################
+def plugin_loaded():
+    package_logger.addHandler(handler)
+    logger.debug("plugin loaded")
+
+def plugin_unloaded():
+    logger.debug("unloading")
+    safe_listener_detach(TEXT_LISTENER)
+    package_logger.removeHandler(handler)
+
+
+def kill_all():
+    for ws in workspaces.lookup():
+        session.client.leave_workspace(ws.id)
+        workspaces.remove(ws)
+
+    session.stop()
+
+
+class CodempReplaceTextCommand(sublime_plugin.TextCommand):
+    def run(self, edit, start, end, content, change_id):
+        # we modify the region to account for any change that happened in the mean time
+        region = self.view.transform_region_from(sublime.Region(start, end), change_id)
+        self.view.replace(edit, region, content)
+
+
 class EventListener(sublime_plugin.EventListener):
     def is_enabled(self):
-        return client.codemp is not None
+        return session.is_active()
 
     def on_exit(self):
-        client.disconnect()
-        if client.driver is not None:
-            client.driver.stop()
+        kill_all()
+        # client.disconnect()
+        # if client.driver is not None:
+        #     client.driver.stop()
 
     def on_pre_close_window(self, window):
         assert client.codemp is not None
@@ -113,5 +164,23 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
             logger.debug(f"local buffer change! {vbuff.id}")
             vbuff.send_buffer_change(changes)
 
-
 TEXT_LISTENER = CodempClientTextChangeListener()
+
+
+
+
+
+# Proxy Commands ( NOT USED, left just in case we need it again. )
+#############################################################################
+# class ProxyCodempShareCommand(sublime_plugin.WindowCommand):
+#   # on_window_command, does not trigger when called from the command palette
+#   # See: https://github.com/sublimehq/sublime_text/issues/2234
+#   def run(self, **kwargs):
+#       self.window.run_command("codemp_share", kwargs)
+#
+#   def input(self, args):
+#       if 'sublime_buffer' not in args:
+#           return SublimeBufferPathInputHandler()
+#
+#   def input_description(self):
+#       return 'Share Buffer:'
