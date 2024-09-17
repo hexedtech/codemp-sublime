@@ -25,7 +25,6 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
             try:
                 client.connect(server_host, user_name, password)
             except Exception as e:
-                logger.error(f"Could not connect: {e}")
                 sublime.error_message(
                     "Could not connect:\n Make sure the server is up\n\
                     and your credentials are correct."
@@ -79,7 +78,7 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
         promise = client.codemp.join_workspace(workspace_id)
         active_window = sublime.active_window()
 
-        def defer_instantiation(promise):
+        def _():
             try:
                 workspace = promise.wait()
             except Exception as e:
@@ -90,7 +89,7 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
                 return
             client.install_workspace(workspace, active_window)
 
-        sublime.set_timeout_async(lambda: defer_instantiation(promise))
+        sublime.set_timeout_async(_)
         # the else shouldn't really happen, and if it does, it should already be instantiated.
         # ignore.
 

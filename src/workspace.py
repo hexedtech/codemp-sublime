@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Tuple
 
-from listeners import CodempClientTextChangeListener
+from ..listeners import CodempClientTextChangeListener
 import sublime
 import shutil
 import tempfile
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def make_cursor_callback(workspace: VirtualWorkspace):
     def _callback(ctl: codemp.CursorController):
-        def get_event_and_draw():
+        def _():
             while event := ctl.try_recv().wait():
                 logger.debug("received remote cursor movement!")
                 if event is None:
@@ -32,7 +32,7 @@ def make_cursor_callback(workspace: VirtualWorkspace):
 
                 draw_cursor_region(vbuff.view, event.start, event.end, event.user)
 
-        sublime.set_timeout_async(get_event_and_draw)
+        sublime.set_timeout_async(_)
 
     return _callback
 
@@ -53,7 +53,6 @@ class VirtualWorkspace:
         self._id2buff: dict[str, VirtualBuffer] = {}
 
         tmpdir = tempfile.mkdtemp(prefix="codemp_")
-        logging.debug(f"setting up virtual fs for workspace in: {tmpdir}")
         self.rootdir = tmpdir
 
         proj: dict = self.window.project_data()  # pyright: ignore

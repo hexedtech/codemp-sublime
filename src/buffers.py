@@ -10,10 +10,9 @@ from ..lib import codemp
 
 logger = logging.getLogger(__name__)
 
-
 def make_bufferchange_cb(buff: VirtualBuffer):
     def __callback(bufctl: codemp.BufferController):
-        def get_change_and_apply():
+        def _():
             change_id = buff.view.change_id()
             while change := bufctl.try_recv().wait():
                 logger.debug("received remote buffer change!")
@@ -43,15 +42,10 @@ def make_bufferchange_cb(buff: VirtualBuffer):
                     },  # pyright: ignore
                 )
 
-        sublime.set_timeout(get_change_and_apply)
-
+        sublime.set_timeout(_)
     return __callback
 
 
-# This class is used as an abstraction between the local buffers (sublime side) and the
-# remote buffers (codemp side), to handle the syncronicity.
-# This class is mainly manipulated by a VirtualWorkspace, that manages its buffers
-# using this abstract class
 class VirtualBuffer:
     def __init__(
         self,
@@ -61,7 +55,7 @@ class VirtualBuffer:
     ):
         self.buffctl = buffctl
         self.view = view
-        self.id = self.buffctl.name()
+        self.id = self.buffctl.path()
 
         self.tmpfile = os.path.join(rootdir, self.id)
         open(self.tmpfile, "a").close()
@@ -70,9 +64,8 @@ class VirtualBuffer:
         self.view.set_name(self.id)
         self.view.retarget(self.tmpfile)
 
-        s = self.view.settings()
+        self.view.settings().set(g.CODEMP_BUFFER_TAG, True)
         self.view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
-        s[g.CODEMP_BUFFER_TAG] = True
 
         logger.info(f"registering a callback for buffer: {self.id}")
         self.buffctl.callback(make_bufferchange_cb(self))
@@ -103,13 +96,13 @@ class VirtualBuffer:
     def sync(self, text_listener):
         promise = self.buffctl.content()
 
-        def defer_sync(promise):
+        def _():
             content = promise.wait()
             safe_listener_detach(text_listener)
             populate_view(self.view, content)
             safe_listener_attach(text_listener, self.view.buffer())
 
-        sublime.set_timeout_async(lambda: defer_sync(promise))
+        sublime.set_timeout_async(_)
 
     def send_buffer_change(self, changes):
         # we do not do any index checking, and trust sublime with providing the correct
