@@ -1,5 +1,3 @@
-# pyright: ignore[reportIncompatibleMethodOverride]
-
 import sublime
 import sublime_plugin
 import logging
@@ -8,18 +6,14 @@ import random
 from ...lib import codemp
 from ..core.session import session
 from ..core.registry import workspaces
+from ..core.registry import buffers
 
 from input_handlers import SimpleTextInput
 from input_handlers import SimpleListInput
 
 logger = logging.getLogger(__name__)
 
-# Client Commands
-#############################################################################
-# Connect Command
 class CodempConnectCommand(sublime_plugin.WindowCommand):
-    def is_enabled(self) -> bool:
-        return True
 
     def run(self, server_host, user_name, password):  # pyright: ignore[reportIncompatibleMethodOverride]
         def _():
@@ -65,10 +59,14 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
         return session.is_active()
 
     def run(self):
-        for ws in workspaces.lookup():
-            ws.uninstall()
+        cli = session.client
+        assert cli is not None
 
-        session.disconnect()
+        for ws in workspaces.lookup():
+            if cli.leave_workspace(ws.id):
+                workspaces.remove(ws)
+
+        session.drop_client()
 
 
 # Join Workspace Command
