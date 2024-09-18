@@ -8,8 +8,9 @@ as well as a remote virtual workspace for you and your team.
 # Codemp-Sublime
 This is the reference [sublime](https://sublimetext.com) plugin for `codemp` maintained by [hexedtech](https://hexed.technology)
 
-> [!IMPORTANT]
-> The plugin is in active development. Expect frequent changes.
+> [!WARNING]
+> The plugin is currently not working, pending merging with the sublime text package repository.
+> The codemp wheel dependency must be registered before the current version works.
 
 # Installation
 > [!IMPORTANT]
