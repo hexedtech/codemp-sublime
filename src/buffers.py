@@ -6,7 +6,7 @@ import logging
 
 from . import globals as g
 from .utils import populate_view, safe_listener_attach, safe_listener_detach
-from ..lib import codemp
+import codemp
 
 logger = logging.getLogger(__name__)
 
