@@ -9,10 +9,11 @@ class SessionManager():
 		self._driver = None
 		self._client = None
 
+	def is_init(self):
+		return self._running and self._driver is not None
+
 	def is_active(self):
-		return self._driver is not None \
-			and self._running \
-			and self._client is not None
+		return self.is_init() and self._client is not None
 
 	@property
 	def client(self):
@@ -37,23 +38,20 @@ class SessionManager():
 		if not self._driver:
 			return
 
-		self.disconnect()
+		self.drop_client()
 		self._driver.stop()
 		self._running = False
 		self._driver = None
 
 	def connect(self, config: codemp.Config) -> codemp.Client:
-		if not self._running:
+		if not self.is_init():
 			self.get_or_init()
 
 		self._client = codemp.connect(config).wait()
 		logger.debug(f"Connected to '{config.host}' as user {self._client.user_name} (id: {self._client.user_id})")
 		return self._client
 
-	def disconnect(self):
-		if not self._client:
-			return
-
+	def drop_client(self):
 		self._client = None
 
 

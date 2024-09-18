@@ -1,17 +1,23 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .workspace import WorkspaceManager
+    from ...lib import codemp
 
 import sublime
 import os
 import logging
 
-from . import globals as g
-from .utils import populate_view, safe_listener_attach, safe_listener_detach
-import codemp
+from .. import globals as g
+from ..utils import populate_view
+from ..utils import safe_listener_attach
+from ..utils import safe_listener_detach
+from ..utils import bidict
 
 logger = logging.getLogger(__name__)
 
-def make_bufferchange_cb(buff: VirtualBuffer):
-    def __callback(bufctl: codemp.BufferController):
+def bind_buffer_manager(buff: BufferManager):
+    def text_callback(bufctl: codemp.BufferController):
         def _():
             change_id = buff.view.change_id()
             while change := bufctl.try_recv().wait():
@@ -41,70 +47,25 @@ def make_bufferchange_cb(buff: VirtualBuffer):
                         "change_id": change_id,
                     },  # pyright: ignore
                 )
-
         sublime.set_timeout(_)
-    return __callback
+    return text_callback
 
-
-class VirtualBuffer:
-    def __init__(
-        self,
-        buffctl: codemp.BufferController,
-        view: sublime.View,
-        rootdir: str,
-    ):
-        self.buffctl = buffctl
-        self.view = view
-        self.id = self.buffctl.path()
-
-        self.tmpfile = os.path.join(rootdir, self.id)
-        open(self.tmpfile, "a").close()
-
-        self.view.set_scratch(True)
-        self.view.set_name(self.id)
-        self.view.retarget(self.tmpfile)
-
-        self.view.settings().set(g.CODEMP_BUFFER_TAG, True)
-        self.view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
-
-        logger.info(f"registering a callback for buffer: {self.id}")
-        self.buffctl.callback(make_bufferchange_cb(self))
-        self.isactive = True
+class BufferManager():
+    def __init__(self, handle: codemp.BufferController, v: sublime.View, filename: str):
+        self.handle: codemp.BufferController = handle
+        self.view: sublime.View = v
+        self.id = self.handle.path()
+        self.filename = filename
 
     def __del__(self):
-        logger.debug("__del__ buffer called.")
+        logger.debug(f"dropping buffer {self.id}")
+        self.handle.clear_callback()
+        self.handle.stop()
 
-    def __hash__(self) -> int:
+    def __hash__(self):
         return hash(self.id)
 
-    def uninstall(self):
-        logger.info(f"clearing a callback for buffer: {self.id}")
-        self.buffctl.clear_callback()
-        self.buffctl.stop()
-        self.isactive = False
-
-        os.remove(self.tmpfile)
-
-        def onclose(did_close):
-            if did_close:
-                logger.info(f"'{self.id}' closed successfully")
-            else:
-                logger.info(f"failed to close the view for '{self.id}'")
-
-        self.view.close(onclose)
-
-    def sync(self, text_listener):
-        promise = self.buffctl.content()
-
-        def _():
-            content = promise.wait()
-            safe_listener_detach(text_listener)
-            populate_view(self.view, content)
-            safe_listener_attach(text_listener, self.view.buffer())
-
-        sublime.set_timeout_async(_)
-
-    def send_buffer_change(self, changes):
+    def send_change(self, changes):
         # we do not do any index checking, and trust sublime with providing the correct
         # sequential indexing, assuming the changes are applied in the order they are received.
         for change in changes:
@@ -114,6 +75,58 @@ class VirtualBuffer:
                     region.begin(), region.end(), change.str
                 )
             )
-
             # we must block and wait the send request to make sure the change went through ok
-            self.buffctl.send(region.begin(), region.end(), change.str).wait()
+            self.handle.send(region.begin(), region.end(), change.str).wait()
+
+    def sync(self, text_listener):
+        promise = self.handle.content()
+
+        def _():
+            content = promise.wait()
+            safe_listener_detach(text_listener)
+            populate_view(self.view, content)
+            safe_listener_attach(text_listener, self.view.buffer())
+        sublime.set_timeout_async(_)
+
+class BufferRegistry():
+    def __init__(self):
+        self._buffers: bidict[BufferManager, WorkspaceManager] = bidict()
+
+    def lookup(self, ws: WorkspaceManager | None = None) -> list[BufferManager]:
+        if not ws:
+            return list(self._buffers.keys())
+        bf = self._buffers.inverse.get(ws)
+        return bf if bf else []
+
+    def lookupId(self, bid: str) -> BufferManager | None:
+        return next((bf for bf in self._buffers if bf.id == bid), None)
+
+    def add(self, bhandle: codemp.BufferController, wsm: WorkspaceManager):
+        bid = bhandle.path()
+        tmpfile = os.path.join(wsm.rootdir, bid)
+        open(tmpfile, "a").close()
+
+        win = sublime.active_window()
+        view = win.open_file(bid)
+        view.set_scratch(True)
+        view.retarget(tmpfile)
+        view.settings().set(g.CODEMP_VIEW_TAG, True)
+        view.settings().set(g.CODEMP_BUFFER_ID, bid)
+        view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
+
+        bfm = BufferManager(bhandle, view, tmpfile)
+
+    def remove(self, bf: BufferManager | str | None):
+        if isinstance(bf, str):
+            bf = self.lookupId(bf)
+
+        if not bf: return
+
+        del self._buffers[bf]
+        bf.view.close()
+
+
+
+
+
+
