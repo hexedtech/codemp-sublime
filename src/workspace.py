@@ -7,7 +7,7 @@ import shutil
 import tempfile
 import logging
 
-from ..lib import codemp
+import codemp
 from . import globals as g
 from .buffers import VirtualBuffer
 from .utils import draw_cursor_region

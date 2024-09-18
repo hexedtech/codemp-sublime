@@ -5,7 +5,7 @@ from typing import Optional
 import sublime
 import logging
 
-from ..lib import codemp
+import codemp
 from .workspace import VirtualWorkspace
 from .buffers import VirtualBuffer
 from .utils import bidict
