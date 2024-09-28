@@ -3,10 +3,10 @@ import sublime_plugin
 import logging
 import random
 
-from ...lib import codemp
+import codemp
 from ..core.session import session
-from ..core.registry import workspaces
-from ..core.registry import buffers
+from ..core.workspace import workspaces
+from ..core.buffers import buffers
 
 from input_handlers import SimpleTextInput
 from input_handlers import SimpleListInput
@@ -14,14 +14,13 @@ from input_handlers import SimpleListInput
 logger = logging.getLogger(__name__)
 
 class CodempConnectCommand(sublime_plugin.WindowCommand):
-
     def run(self, server_host, user_name, password):  # pyright: ignore[reportIncompatibleMethodOverride]
         def _():
             try:
-                config = codemp.get_default_config()
-                config.host = server_host
-                config.username = user_name
-                config.password = password
+                config = codemp.Config(
+                    username = user_name,
+                    password = password,
+                    host = server_host)
                 session.connect(config)
             except Exception as e:
                 sublime.error_message(
@@ -72,15 +71,14 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
 # Join Workspace Command
 class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
-        return client.codemp is not None
+        return session.is_active()
 
     def run(self, workspace_id):  # pyright: ignore[reportIncompatibleMethodOverride]
-        assert client.codemp is not None
         if workspace_id is None:
             return
 
         logger.info(f"Joining workspace: '{workspace_id}'...")
-        promise = client.codemp.join_workspace(workspace_id)
+        promise = session.client.join_workspace(workspace_id)
         active_window = sublime.active_window()
 
         def _():
@@ -92,19 +90,15 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
                 )
                 sublime.error_message(f"Could not join workspace '{workspace_id}'")
                 return
-            client.install_workspace(workspace, active_window)
-
+            workspaces.add(workspace)
         sublime.set_timeout_async(_)
-        # the else shouldn't really happen, and if it does, it should already be instantiated.
-        # ignore.
 
     def input_description(self):
         return "Join:"
 
     def input(self, args):
-        assert client.codemp is not None
         if "workspace_id" not in args:
-            list = client.codemp.list_workspaces(True, True)
+            list = session.client.list_workspaces(True, True)
             return SimpleListInput(
                 ("workspace_id", list.wait()),
             )
