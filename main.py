@@ -3,11 +3,11 @@ import sublime
 import sublime_plugin
 import logging
 
-from lib import codemp
+import codemp
 from .plugin.utils import safe_listener_detach
 from .plugin.core.session import session
-from .plugin.core.registry import workspaces
-from .plugin.core.registry import buffers
+from .plugin.core.workspace import workspaces
+from .plugin.core.buffers import buffers
 
 from .plugin.commands.client import CodempConnectCommand
 from .plugin.commands.client import CodempDisconnectCommand

@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ...main import CodempClientTextChangeListener
-    from ...lib import codemp
+    import codemp
 
 import sublime
 import shutil
@@ -13,7 +13,7 @@ import logging
 from .. import globals as g
 from ..utils import draw_cursor_region
 from ..utils import bidict
-from ..core.registry import buffers
+from .buffers import buffers
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +64,11 @@ class WorkspaceManager():
         self.curctl: codemp.CursorController = self.handle.cursor()
         self.rootdir: str = rootdir
         self.id: str = self.handle.id()
+        self.curctl.callback(cursor_callback)
 
     def __del__(self):
         logger.debug(f"dropping workspace {self.id}")
         self.curctl.clear_callback()
-        self.curctl.stop()
 
         for buff in self.handle.buffer_list():
             if not self.handle.detach(buff):
@@ -76,9 +76,8 @@ class WorkspaceManager():
                     f"could not detach from '{buff}' for workspace '{self.id}'."
                 )
 
-            bfm = buffers.lookupId(buff)
-            if bfm:
-                buffers.remove(bfm)
+        for bfm in buffers.lookup(self):
+            buffers.remove(bfm)
 
     def send_cursor(self, id: str, start: Tuple[int, int], end: Tuple[int, int]):
         # we can safely ignore the promise, we don't really care if everything
@@ -89,13 +88,13 @@ class WorkspaceRegistry():
     def __init__(self) -> None:
         self._workspaces: bidict[WorkspaceManager, sublime.Window] = bidict()
 
-    def lookup(self, w: sublime.Window | None = None) -> list[WorkspaceManager]:
+    def lookup(self, w: Optional[sublime.Window] = None) -> list[WorkspaceManager]:
         if not w:
             return list(self._workspaces.keys())
         ws = self._workspaces.inverse.get(w)
         return ws if ws else []
 
-    def lookupId(self, wid: str) -> WorkspaceManager | None:
+    def lookupId(self, wid: str) -> Optional[WorkspaceManager]:
         return next((ws for ws in self._workspaces if ws.id == wid), None)
 
     def add(self, wshandle: codemp.Workspace) -> WorkspaceManager:
@@ -109,7 +108,7 @@ class WorkspaceRegistry():
         self._workspaces[wm] = win
         return wm
 
-    def remove(self, ws: WorkspaceManager | str | None):
+    def remove(self, ws: Optional[WorkspaceManager | str]):
         if isinstance(ws, str):
             ws = self.lookupId(ws)
 
@@ -120,7 +119,7 @@ class WorkspaceRegistry():
         del self._workspaces[ws]
 
 
-
+workspaces = WorkspaceRegistry()
 
 
 

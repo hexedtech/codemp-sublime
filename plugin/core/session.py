@@ -1,5 +1,5 @@
 import logging
-from ...lib import codemp
+import codemp
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,5 @@ class SessionManager():
 
 	def drop_client(self):
 		self._client = None
-
 
 session = SessionManager()
