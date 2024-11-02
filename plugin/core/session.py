@@ -1,6 +1,8 @@
 import logging
 import codemp
 
+from ..utils import some
+
 logger = logging.getLogger(__name__)
 
 class SessionManager():
@@ -17,7 +19,7 @@ class SessionManager():
 
 	@property
 	def client(self):
-		return self._client
+		return some(self._client)
 
 	def get_or_init(self) -> codemp.Driver:
 		if self._driver:
@@ -48,8 +50,15 @@ class SessionManager():
 			self.get_or_init()
 
 		self._client = codemp.connect(config).wait()
-		logger.debug(f"Connected to '{config.host}' as user {self._client.user_name} (id: {self._client.user_id})")
+		self.config = config
+		logger.debug(f"Connected to '{self.config.host}' as user {self._client.current_user().name} (id: {self._client.current_user().id})")
 		return self._client
+
+	def get_workspaces(self, owned: bool = True, invited: bool = True):
+		owned_wss = self.client.fetch_owned_workspaces().wait() if owned else []
+		invited_wss = self.client.fetch_joined_workspaces().wait() if invited else []
+
+		return owned_wss + invited_wss
 
 	def drop_client(self):
 		self._client = None

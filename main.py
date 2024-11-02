@@ -73,11 +73,12 @@ class EventListener(sublime_plugin.EventListener):
         #     client.driver.stop()
 
     def on_pre_close_window(self, window):
-        assert client.codemp is not None
+        assert session.client is not None
 
-        for vws in client.all_workspaces(window):
-            client.codemp.leave_workspace(vws.id)
-            client.uninstall_workspace(vws)
+        for vws in workspaces.lookup(window):
+            sublime.run_command("codemp_leave_workspace", {
+                "workspace_id": vws.id
+                })
 
     def on_text_command(self, view, command_name, args):
         if command_name == "codemp_replace_text":
@@ -91,7 +92,7 @@ class EventListener(sublime_plugin.EventListener):
 class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
     @classmethod
     def is_applicable(cls, settings):
-        return settings.get(g.CODEMP_BUFFER_TAG) is not None
+        return settings.get(g.CODEMP_VIEW_TAG) is not None
 
     @classmethod
     def applies_to_primary_view_only(cls):
@@ -102,14 +103,17 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         start = self.view.rowcol(region.begin())
         end = self.view.rowcol(region.end())
 
-        vws = client.workspace_from_view(self.view)
-        vbuff = client.buffer_from_view(self.view)
-        if vws is None or vbuff is None:
-            logger.error("we couldn't find the matching buffer or workspace!")
+        try:
+            _, vws, vbuff = objects_from_view(self.view)
+        except ValueError:
+            logger.error(f"Could not find buffers associated with the view {self.view}.\
+                Removig the tag to disable event listener. Reattach.")
+            # delete the tag so we disable this event listener on the view
+            del self.view.settings()[g.CODEMP_VIEW_TAG]
             return
 
-        logger.debug(f"selection modified! {vws.id}, {vbuff.id} - {start}, {end}")
         vws.send_cursor(vbuff.id, start, end)
+        logger.debug(f"selection modified! {vws.id}, {vbuff.id} - {start}, {end}")
 
     def on_activated(self):
         global TEXT_LISTENER
@@ -126,15 +130,11 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
             logger.debug("closing active view")
             global TEXT_LISTENER
             safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
-
-        vws = client.workspace_from_view(self.view)
-        vbuff = client.buffer_from_view(self.view)
-        if vws is None or vbuff is None:
-            logger.debug("no matching workspace or buffer.")
+        try:
+            _, vws, vbuff = objects_from_view(self.view)
+            buffers.remove(vbuff)
+        except ValueError:
             return
-
-        client.unregister_buffer(vbuff)
-        vws.uninstall_buffer(vbuff)
 
     def on_text_command(self, command_name, args):
         if command_name == "codemp_replace_text":
@@ -145,30 +145,16 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
             logger.info("got a codemp_replace_text command! but in the view listener")
 
 
-class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
-    @classmethod
-    def is_applicable(cls, buffer):  # pyright: ignore
-        # don't attach this event listener automatically
-        # we'll do it by hand with .attach(buffer).
-        return False
+# Next TODO:
+# Server configurations:
+#   - where do we store it?
+#   - TOML? yes probably toml
 
-    def on_text_changed(self, changes):
-        s = self.buffer.primary_view().settings()
-        if s.get(g.CODEMP_IGNORE_NEXT_TEXT_CHANGE, False):
-            logger.debug("Ignoring echoing back the change.")
-            s[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = False
-            return
-
-        vbuff = client.buffer_from_view(self.buffer.primary_view())
-        if vbuff is not None:
-            logger.debug(f"local buffer change! {vbuff.id}")
-            vbuff.send_buffer_change(changes)
-
-TEXT_LISTENER = CodempClientTextChangeListener()
-
-
-
-
+# * Quickpanel for connecting with stuff.
+# * Quickpanel for browsing the servers
+# * Move all "server actions" like, create, delete, rename etc. as quickpanel actions. (See SFTP plugin.)
+# * make panel for notifications!
+# * make panel for errors and logging!
 
 # Proxy Commands ( NOT USED, left just in case we need it again. )
 #############################################################################
@@ -184,3 +170,8 @@ TEXT_LISTENER = CodempClientTextChangeListener()
 #
 #   def input_description(self):
 #       return 'Share Buffer:'
+
+
+
+
+

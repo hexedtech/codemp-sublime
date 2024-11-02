@@ -7,10 +7,9 @@ from typing import Tuple, Union, List
 ############################################################
 class SimpleTextInput(sublime_plugin.TextInputHandler):
     def __init__(self, *args: Tuple[str, Union[str, List[str]]]):
-        logging.debug(f"why isn't the text input working? {args}")
-        self.argname = args[0][0]
-        self.default = args[0][1]
-        self.next_inputs = args[1:]
+        self.input, *self.next_inputs = args
+        self.argname = self.input[0]
+        self.default = self.input[1]
 
     def initial_text(self):
         if isinstance(self.default, str):
@@ -32,9 +31,9 @@ class SimpleTextInput(sublime_plugin.TextInputHandler):
 
 class SimpleListInput(sublime_plugin.ListInputHandler):
     def __init__(self, *args: Tuple[str, Union["list[str]", str]]):
-        self.argname = args[0][0]
-        self.list = args[0][1]
-        self.next_inputs = args[1:]
+        self.input, *self.next_inputs = args
+        self.argname = self.input[0]
+        self.list = self.input[1]
 
     def name(self):
         return self.argname
@@ -133,23 +132,23 @@ class SimpleListInput(sublime_plugin.ListInputHandler):
 #             return AddListEntry(self)
 
 
-class AddListEntry(sublime_plugin.TextInputHandler):
-    # this class works when the list input handler
-    # added appended a new element to it's list that will need to be
-    # replaced with the entry added from here!
-    def __init__(self, list_input_handler):
-        self.parent = list_input_handler
+# class AddListEntry(sublime_plugin.TextInputHandler):
+#     # this class works when the list input handler
+#     # added appended a new element to it's list that will need to be
+#     # replaced with the entry added from here!
+#     def __init__(self, list_input_handler):
+#         self.parent = list_input_handler
 
-    def name(self):
-        return ""
+#     def name(self):
+#         return ""
 
-    def validate(self, text: str) -> bool:
-        return not len(text) == 0
+#     def validate(self, text: str) -> bool:
+#         return not len(text) == 0
 
-    def confirm(self, text: str):
-        self.parent.list.pop()  # removes the add_entry_text
-        self.parent.list.insert(0, text)
-        self.parent.preselected = 0
+#     def confirm(self, text: str):
+#         self.parent.list.pop()  # removes the add_entry_text
+#         self.parent.list.insert(0, text)
+#         self.parent.preselected = 0
 
-    def next_input(self, args):
-        return sublime_plugin.BackInputHandler()
+#     def next_input(self, args):
+#         return sublime_plugin.BackInputHandler()

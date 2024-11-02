@@ -8,6 +8,7 @@ import sublime
 import os
 import logging
 
+from codemp import TextChange
 from .. import globals as g
 from ..utils import populate_view
 from ..utils import safe_listener_attach
@@ -20,33 +21,40 @@ def bind_callback(v: sublime.View):
     def _callback(bufctl: codemp.BufferController):
         def _():
             change_id = v.change_id()
-            while change := bufctl.try_recv().wait():
+            while buffup := bufctl.try_recv().wait():
                 logger.debug("received remote buffer change!")
-                if change is None:
+                if buffup is None:
                     break
 
-                if change.is_empty():
+                if buffup.change.is_empty():
                     logger.debug("change is empty. skipping.")
                     continue
 
                 # In case a change arrives to a background buffer, just apply it.
                 # We are not listening on it. Otherwise, interrupt the listening
                 # to avoid echoing back the change just received.
-                if v.id() == g.ACTIVE_CODEMP_VIEW:
+                if v == sublime.active_window().active_view():
                     v.settings()[g.CODEMP_IGNORE_NEXT_TEXT_CHANGE] = True
+
 
                 # we need to go through a sublime text command, since the method,
                 # view.replace needs an edit token, that is obtained only when calling
                 # a textcommand associated with a view.
-                v.run_command(
-                    "codemp_replace_text",
-                    {
-                        "start": change.start,
-                        "end": change.end,
-                        "content": change.content,
-                        "change_id": change_id,
-                    },  # pyright: ignore
-                )
+                try:
+                    change = buffup.change
+                    v.run_command(
+                        "codemp_replace_text",
+                        {
+                            "start": change.start,
+                            "end": change.end,
+                            "content": change.content,
+                            "change_id": change_id,
+                        },  # pyright: ignore
+                    )
+                except Exception as e:
+                    raise e
+
+                bufctl.ack(buffup.version)
         sublime.set_timeout(_)
     return _callback
 
@@ -61,7 +69,6 @@ class BufferManager():
     def __del__(self):
         logger.debug(f"dropping buffer {self.id}")
         self.handle.clear_callback()
-        self.handle.stop()
 
     def __hash__(self):
         return hash(self.id)
@@ -76,8 +83,9 @@ class BufferManager():
                     region.begin(), region.end(), change.str
                 )
             )
+
             # we must block and wait the send request to make sure the change went through ok
-            self.handle.send(region.begin(), region.end(), change.str).wait()
+            self.handle.send(TextChange(start=region.begin(), end=region.end(), content=change.str))
 
     def sync(self, text_listener):
         promise = self.handle.content()
@@ -95,32 +103,43 @@ class BufferRegistry():
     def lookup(self, ws: Optional[WorkspaceManager] = None) -> list[BufferManager]:
         if not ws:
             return list(self._buffers.keys())
-        bf = self._buffers.inverse.get(ws)
-        return bf if bf else []
+        bfs = self._buffers.inverse.get(ws)
+        return bfs if bfs else []
 
-    def lookupId(self, bid: str) -> Optional[BufferManager]:
-        return next((bf for bf in self._buffers if bf.id == bid), None)
+    def lookupParent(self, bf: BufferManager | str) -> WorkspaceManager:
+        if isinstance(bf, str):
+            bf = self.lookupId(bf)
+        return self._buffers[bf]
+
+    def lookupId(self, bid: str) -> BufferManager:
+        bfm = next((bf for bf in self._buffers if bf.id == bid), None)
+        if not bfm: raise KeyError
+        return bfm
 
     def add(self, bhandle: codemp.BufferController, wsm: WorkspaceManager):
         bid = bhandle.path()
-        tmpfile = os.path.join(wsm.rootdir, bid)
-        open(tmpfile, "a").close()
+        # tmpfile = os.path.join(wsm.rootdir, bid)
+        # open(tmpfile, "a").close()
+        content = bhandle.content()
 
         win = sublime.active_window()
         view = win.open_file(bid)
         view.set_scratch(True)
-        view.retarget(tmpfile)
+        # view.retarget(tmpfile)
         view.settings().set(g.CODEMP_VIEW_TAG, True)
         view.settings().set(g.CODEMP_BUFFER_ID, bid)
         view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
+        populate_view(view, content.wait())
 
+        tmpfile = "DISABLE"
         bfm = BufferManager(bhandle, view, tmpfile)
         self._buffers[bfm] = wsm
 
-    def remove(self, bf: Optional[BufferManager | str]):
+        return bfm
+
+    def remove(self, bf: BufferManager | str):
         if isinstance(bf, str):
             bf = self.lookupId(bf)
-        if not bf: return
 
         del self._buffers[bf]
         bf.view.close()

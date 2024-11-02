@@ -2,14 +2,15 @@ from __future__ import annotations
 from typing import Optional, Tuple
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ...main import CodempClientTextChangeListener
     import codemp
 
 import sublime
 import shutil
 import tempfile
 import logging
+import gc
 
+from codemp import Selection
 from .. import globals as g
 from ..utils import draw_cursor_region
 from ..utils import bidict
@@ -18,9 +19,9 @@ from .buffers import buffers
 logger = logging.getLogger(__name__)
 
 def add_project_folder(w: sublime.Window, folder: str, name: str = ""):
-    proj: dict = w.project_data()  # pyright: ignore
-    if proj is None:
-        proj = {"folders": []}  # pyright: ignore, `Value` can be None
+    proj = w.project_data()
+    if not isinstance(proj, dict):
+        proj = {"folders": []}
 
     if name == "":
         entry = {"path": folder}
@@ -32,7 +33,7 @@ def add_project_folder(w: sublime.Window, folder: str, name: str = ""):
     w.set_project_data(proj)
 
 def remove_project_folder(w: sublime.Window, filterstr: str):
-    proj: dict = self.window.project_data()  # type:ignore
+    proj: dict = w.project_data()  # type:ignore
     if proj is None:
         return
 
@@ -51,10 +52,13 @@ def cursor_callback(ctl: codemp.CursorController):
         while event := ctl.try_recv().wait():
             if event is None: break
 
-            bfm = buffers.lookupId(event.buffer)
-            if not bfm: continue
+            try: bfm = buffers.lookupId(event.sel.buffer)
+            except KeyError: continue
 
-            draw_cursor_region(bfm.view, event.start, event.end, event.user)
+            region_start = (event.sel.start_row, event.sel.start_col)
+            region_end = (event.sel.end_row, event.sel.end_col)
+
+            draw_cursor_region(bfm.view, region_start, region_end, event.user)
     sublime.set_timeout_async(_)
 
 class WorkspaceManager():
@@ -70,8 +74,8 @@ class WorkspaceManager():
         logger.debug(f"dropping workspace {self.id}")
         self.curctl.clear_callback()
 
-        for buff in self.handle.buffer_list():
-            if not self.handle.detach(buff):
+        for buff in self.handle.active_buffers():
+            if not self.handle.detach_buffer(buff):
                 logger.warning(
                     f"could not detach from '{buff}' for workspace '{self.id}'."
                 )
@@ -82,7 +86,14 @@ class WorkspaceManager():
     def send_cursor(self, id: str, start: Tuple[int, int], end: Tuple[int, int]):
         # we can safely ignore the promise, we don't really care if everything
         # is ok for now with the cursor.
-        self.curctl.send(id, start, end)
+        sel = Selection(
+            start_row=start[0],
+            start_col=start[1],
+            end_row=end[0],
+            end_col=end[1],
+            buffer=id
+        )
+        self.curctl.send(sel)
 
 class WorkspaceRegistry():
     def __init__(self) -> None:
@@ -94,29 +105,35 @@ class WorkspaceRegistry():
         ws = self._workspaces.inverse.get(w)
         return ws if ws else []
 
-    def lookupId(self, wid: str) -> Optional[WorkspaceManager]:
-        return next((ws for ws in self._workspaces if ws.id == wid), None)
+    def lookupParent(self, ws: WorkspaceManager | str) -> sublime.Window:
+        if isinstance(ws, str):
+            wsm = self.lookupId(ws)
+        return self._workspaces[ws]
+
+    def lookupId(self, wid: str) -> WorkspaceManager:
+        wsm = next((ws for ws in self._workspaces if ws.id == wid), None)
+        if not wsm: raise KeyError
+        return wsm
 
     def add(self, wshandle: codemp.Workspace) -> WorkspaceManager:
         win = sublime.active_window()
 
-        tmpdir = tempfile.mkdtemp(prefix="codemp_")
-        name = f"{g.WORKSPACE_FOLDER_PREFIX}{wshandle.id()}"
-        add_project_folder(win, tmpdir, name)
+        # tmpdir = tempfile.mkdtemp(prefix="codemp_")
+        # add_project_folder(win, tmpdir, f"{g.WORKSPACE_FOLDER_PREFIX}{wshandle.id()}")
 
+        tmpdir = "DISABLED"
         wm = WorkspaceManager(wshandle, win, tmpdir)
         self._workspaces[wm] = win
         return wm
 
-    def remove(self, ws: Optional[WorkspaceManager | str]):
+    def remove(self, ws: WorkspaceManager | str):
         if isinstance(ws, str):
             ws = self.lookupId(ws)
 
-        if not ws: return
-
-        remove_project_folder(ws.window, f"{g.WORKSPACE_FOLDER_PREFIX}{ws.id}")
-        shutil.rmtree(ws.rootdir, ignore_errors=True)
+        # remove_project_folder(ws.window, f"{g.WORKSPACE_FOLDER_PREFIX}{ws.id}")
+        # shutil.rmtree(ws.rootdir, ignore_errors=True)
         del self._workspaces[ws]
+
 
 
 workspaces = WorkspaceRegistry()
