@@ -5,10 +5,14 @@ import logging
 
 import codemp
 from .plugin.utils import safe_listener_detach
+from .plugin.utils import safe_listener_attach
 from .plugin.core.session import session
 from .plugin.core.workspace import workspaces
 from .plugin.core.buffers import buffers
+from .plugin.text_listener import TEXT_LISTENER
+from .plugin import globals as g
 
+# We import these just to showcase the commands available.
 from .plugin.commands.client import CodempConnectCommand
 from .plugin.commands.client import CodempDisconnectCommand
 from .plugin.commands.client import CodempCreateWorkspaceCommand
@@ -21,6 +25,10 @@ from .plugin.commands.workspace import CodempCreateBufferCommand
 from .plugin.commands.workspace import CodempDeleteBufferCommand
 from .plugin.commands.workspace import CodempJoinBufferCommand
 from .plugin.commands.workspace import CodempLeaveBufferCommand
+
+from .plugin.quickpanel.qpbrowser import QPServerBrowser
+from .plugin.quickpanel.qpbrowser import QPWorkspaceBrowser
+
 
 LOG_LEVEL = logging.DEBUG
 handler = logging.StreamHandler()
@@ -53,6 +61,38 @@ def kill_all():
         workspaces.remove(ws)
 
     session.stop()
+
+def objects_from_view(view):
+    assert view.settings().get(g.CODEMP_VIEW_TAG, False)
+    buffid = str(view.settings().get(g.CODEMP_BUFFER_ID))
+
+    try: vbuff = buffers.lookupId(buffid)
+    except KeyError:
+        logger.error("we couldn't find the matching buffer or workspace!")
+        raise ValueError
+
+    vws = buffers.lookupParent(vbuff)
+    win = workspaces.lookupParent(vws)
+
+    return win, vws, vbuff
+
+class CodempBrowseWorkspaceCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self) -> bool:
+        return session.is_active()
+
+    def run(self, workspace_id):
+        wks = workspaces.lookupId(workspace_id)
+        buffers = wks.handle.fetch_buffers()
+        QPWorkspaceBrowser(self.window, workspace_id, buffers.wait()).run()
+
+
+class CodempBrowseServerCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self) -> bool:
+        return session.is_active()
+
+    def run(self):
+        wks = session.get_workspaces()
+        QPServerBrowser(self.window, session.host, wks).run()
 
 
 class CodempReplaceTextCommand(sublime_plugin.TextCommand):

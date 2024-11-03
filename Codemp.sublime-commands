@@ -20,23 +20,37 @@
     }
   },
   {
+    "caption": "Codemp: Browse Server",
+    "command": "codemp_browse_server",
+    "args": {}
+  },
+  {
+    "caption": "Codemp: Browse Workspace",
+    "command": "codemp_browse_workspace",
+    "args": {
+
+    }
+  },
+  {
     // # on_window_command, does not trigger when called from the command palette
     // # See: https://github.com/sublimehq/sublime_text/issues/2234 
   	"caption": "Codemp: Connect",
   	"command": "codemp_connect",
   	"args": {
-      "server_host": "http://code.mp:50053",
+      "server_host": "code.mp",
+      "user_name" : "cschen@codemp.dev",
+      "password" : "***REMOVED***"
   	}
   },
   {
     "caption": "Codemp: Disconnect Client",
     "command": "codemp_disconnect",
-    "arg": {}
+    "args": {}
   },
   {
     "caption": "Codemp: Join Workspace",
     "command": "codemp_join_workspace",
-    "arg": {
+    "args": {
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'
     },
@@ -44,14 +58,14 @@
   {
     "caption": "Codemp: Leave Workspace",
     "command": "codemp_leave_workspace",
-    "arg": {
+    "args": {
       // "id": 'lmaaaao'
     }
   },
   {
     "caption": "Codemp: Invite To Workspace",
     "command": "codemp_invite_to_workspace",
-    "arg": {
+    "args": {
       // "id": 'lmaaaao'
       // "user": 'lupo'
     }
@@ -59,21 +73,21 @@
   {
     "caption": "Codemp: Create Workspace",
     "command": "codemp_create_workspace",
-    "arg": {
+    "args": {
       // "id": 'lmaaaao'
     }
   },
   {
     "caption": "Codemp: Delete Workspace",
     "command": "codemp_delete_workspace",
-    "arg": {
+    "args": {
       // "id": 'lmaaaao'
     }
   },
   {
     "caption": "Codemp: Join Buffer",
     "command": "codemp_join_buffer",
-    "arg": {
+    "args": {
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'
     },
@@ -81,7 +95,7 @@
   {
   	"caption": "Codemp: Leave Buffer",
   	"command": "codemp_leave_buffer",
-  	"arg": {
+  	"args": {
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'
   	}
@@ -89,7 +103,7 @@
   {
     "caption": "Codemp: Create Buffer",
     "command": "codemp_create_buffer",
-    "arg": {
+    "args": {
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'
     }
@@ -97,7 +111,7 @@
   {
     "caption": "Codemp: Delete Buffer",
     "command": "codemp_delete_buffer",
-    "arg": {
+    "args": {
       // 'workspace_id': 'asd'
       // 'buffer_id': 'test'
     }
