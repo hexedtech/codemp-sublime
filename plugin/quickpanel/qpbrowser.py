@@ -57,10 +57,7 @@ class QPServerBrowser():
         def _():
             self.window.run_command(
                 "codemp_join_workspace",
-                {
-                    "workspace_id": self.current_wid_selection,
-                    "sync": True
-                })
+                {"workspace_id": self.current_wid_selection})
 
             ws = workspaces.lookupId(wid)
             buffers = ws.handle.fetch_buffers()
@@ -199,12 +196,12 @@ class QPWorkspaceBrowser():
         elif index == 3:
             def create_buffer(name):
                 self.window.run_command(
-                    "codemp_create_workspace",
+                    "codemp_create_buffer",
                     {
                         "workspace_id": self.workspace_id,
                         "buffer_id": name
                     })
-            self.window.show_input_panel("New Workspace Name", "", create_buffer, None, self.edit_workspace)
+            self.window.show_input_panel("New Buffer Name", "", create_buffer, None, self.edit_workspace)
         elif index == 4:
             def delete_buffer(index):
                 if index == -1 or index == 0:
