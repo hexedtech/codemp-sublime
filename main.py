@@ -6,6 +6,7 @@ import logging
 import codemp
 from .plugin.utils import safe_listener_detach
 from .plugin.utils import safe_listener_attach
+from .plugin.utils import some
 from .plugin.core.session import session
 from .plugin.core.workspace import workspaces
 from .plugin.core.buffers import buffers
@@ -66,10 +67,7 @@ def objects_from_view(view):
     assert view.settings().get(g.CODEMP_VIEW_TAG, False)
     buffid = str(view.settings().get(g.CODEMP_BUFFER_ID))
 
-    try: vbuff = buffers.lookupId(buffid)
-    except KeyError:
-        logger.error("we couldn't find the matching buffer or workspace!")
-        raise ValueError
+    vbuff = buffers.lookupId(buffid)
 
     vws = buffers.lookupParent(vbuff)
     win = workspaces.lookupParent(vws)
@@ -92,7 +90,7 @@ class CodempBrowseServerCommand(sublime_plugin.WindowCommand):
 
     def run(self):
         wks = session.get_workspaces()
-        QPServerBrowser(self.window, session.host, wks).run()
+        QPServerBrowser(self.window, session.config.host, wks).run()
 
 
 class CodempReplaceTextCommand(sublime_plugin.TextCommand):
@@ -113,8 +111,6 @@ class EventListener(sublime_plugin.EventListener):
         #     client.driver.stop()
 
     def on_pre_close_window(self, window):
-        assert session.client is not None
-
         for vws in workspaces.lookup(window):
             sublime.run_command("codemp_leave_workspace", {
                 "workspace_id": vws.id
@@ -145,9 +141,9 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 
         try:
             _, vws, vbuff = objects_from_view(self.view)
-        except ValueError:
+        except KeyError:
             logger.error(f"Could not find buffers associated with the view {self.view}.\
-                Removig the tag to disable event listener. Reattach.")
+                Removing the tag to disable event listener. Reattach.")
             # delete the tag so we disable this event listener on the view
             del self.view.settings()[g.CODEMP_VIEW_TAG]
             return
@@ -156,24 +152,24 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         logger.debug(f"selection modified! {vws.id}, {vbuff.id} - {start}, {end}")
 
     def on_activated(self):
-        global TEXT_LISTENER
         logger.debug(f"'{self.view}' view activated!")
         safe_listener_attach(TEXT_LISTENER, self.view.buffer())  # pyright: ignore
 
     def on_deactivated(self):
-        global TEXT_LISTENER
         logger.debug(f"'{self.view}' view deactivated!")
         safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
 
     def on_pre_close(self):
         if self.view == sublime.active_window().active_view():
             logger.debug("closing active view")
-            global TEXT_LISTENER
             safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
         try:
-            _, vws, vbuff = objects_from_view(self.view)
-            buffers.remove(vbuff)
-        except ValueError:
+            bid = str(self.view.settings().get(g.CODEMP_BUFFER_ID))
+            vws = buffers.lookupParent(bid)
+            some(self.view.window()).run_command(
+                "codemp_leave_buffer",
+                {"workspace_id": vws.id, "buffer_id": bid})
+        except KeyError:
             return
 
     def on_text_command(self, command_name, args):

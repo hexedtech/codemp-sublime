@@ -167,7 +167,7 @@ class CodempDeleteWorkspaceCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         workspaces = session.get_workspaces(owned=True, invited=False)  # noqa: F841
         if "workspace_id" not in args:
-            return SimpleListInput(("workspace_id", workspaces)
+            return SimpleListInput(("workspace_id", workspaces))
 
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
         try:
