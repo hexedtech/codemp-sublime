@@ -94,9 +94,11 @@ class CodempBrowseServerCommand(sublime_plugin.WindowCommand):
 
 
 class CodempReplaceTextCommand(sublime_plugin.TextCommand):
-    def run(self, edit, start, end, content, change_id):
+    def run(self, edit, start, end, content, change_id = None):
         # we modify the region to account for any change that happened in the mean time
-        region = self.view.transform_region_from(sublime.Region(start, end), change_id)
+        region = sublime.Region(start, end)
+        if change_id:
+            region = self.view.transform_region_from(sublime.Region(start, end), change_id)
         self.view.replace(edit, region, content)
 
 
@@ -155,7 +157,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
             return
 
         vws.send_cursor(vbuff.id, start, end)
-        logger.debug(f"selection modified! {vws.id}, {vbuff.id} - {start}, {end}")
+        # logger.debug(f"selection modified! {vws.id}, {vbuff.id} - {start}, {end}")
 
     def on_activated(self):
         logger.debug(f"'{self.view}' view activated!")

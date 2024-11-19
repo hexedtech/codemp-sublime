@@ -88,7 +88,7 @@ def populate_view(view, content):
             "start": 0,
             "end": view.size(),
             "content": content,
-            "change_id": view.change_id(),
+            "change_id": None,
         },
     )
 
@@ -105,7 +105,7 @@ def draw_cursor_region(view, start, end, user):
     reg_flags = sublime.RegionFlags.DRAW_EMPTY
 
     user_hash = hash(user)
-
+    
     view.add_regions(
         f"{g.SUBLIME_REGIONS_PREFIX}-{user_hash}",
         [reg],

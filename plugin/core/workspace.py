@@ -51,7 +51,7 @@ def cursor_callback(ctl: codemp.CursorController):
     def _():
         while event := ctl.try_recv().wait():
             if event is None: break
-
+            
             try: bfm = buffers.lookupId(event.sel.buffer)
             except KeyError: continue
 

@@ -7,7 +7,7 @@ from ..core.workspace import workspaces
 from ..core.buffers import buffers
 
 from ..text_listener import TEXT_LISTENER
-from ..utils import safe_listener_attach, safe_listener_detach
+from ..utils import safe_listener_attach, safe_listener_detach, populate_view
 from ..input_handlers import SimpleListInput, SimpleTextInput
 
 logger = logging.getLogger(__name__)
@@ -67,11 +67,11 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
 
         # now we can defer the attaching process
         logger.debug(f"attempting to attach to {buffer_id}...")
-        promise = vws.handle.attach_buffer(buffer_id)
+        ctl_promise = vws.handle.attach_buffer(buffer_id)
 
         def _():
             try:
-                buff_ctl = promise.wait()
+                buff_ctl = ctl_promise.wait()
                 logger.debug("attach successfull!")
             except Exception as e:
                 logging.error(f"error when attaching to buffer '{id}':\n\n {e}")
@@ -79,8 +79,11 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
                 return
 
             safe_listener_detach(TEXT_LISTENER)
+            content_promise = buff_ctl.content()
             vbuff = buffers.add(buff_ctl, vws)
 
+            content = content_promise.wait()
+            populate_view(vbuff.view, content)
             if self.window.active_view() == vbuff.view:
                 # if view is already active focusing it won't trigger `on_activate`.
                 safe_listener_attach(TEXT_LISTENER, vbuff.view.buffer())
@@ -115,8 +118,8 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
             buffers.lookupId(buffer_id)
             vws = workspaces.lookupId(workspace_id)
         except KeyError:
-            sublime.error_message(f"You are not attached to the buffer '{id}'")
-            logging.warning(f"You are not attached to the buffer '{id}'")
+            sublime.error_message(f"You are not attached to the buffer '{buffer_id}'")
+            logging.warning(f"You are not attached to the buffer '{buffer_id}'")
             return
 
         if not vws.handle.get_buffer(buffer_id):
