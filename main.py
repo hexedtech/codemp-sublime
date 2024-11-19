@@ -100,6 +100,12 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
         self.view.replace(edit, region, content)
 
 
+class CodempSyncBuffer(sublime_plugin.TextCommand):
+    def run(self, edit):
+        buff = buffers.lookupId(self.view.settings().get(g.CODEMP_BUFFER_ID))
+        buff.sync(TEXT_LISTENER)
+
+
 class EventListener(sublime_plugin.EventListener):
     def is_enabled(self):
         return session.is_active()

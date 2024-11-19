@@ -116,4 +116,9 @@
       // 'buffer_id': 'test'
     }
   },
+  {
+    "caption": "Codemp: Sync",
+    "command": "codemp_sync_buffer",
+    "args": {}
+  }
 ]
