@@ -76,3 +76,6 @@ docs/_build/
 
 # Pyenv
 #.python-version
+
+# bfg
+bfg*

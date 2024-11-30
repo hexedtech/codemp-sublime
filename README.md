@@ -8,13 +8,12 @@ as well as a remote virtual workspace for you and your team.
 # Codemp-Sublime
 This is the reference [sublime](https://sublimetext.com) plugin for `codemp` maintained by [hexedtech](https://hexed.technology)
 
+
 > [!WARNING]
-> The plugin is currently not working, pending merging with the sublime text package repository.
-> The codemp wheel dependency must be registered before the current version works.
+> This package is still under active development, expect breakages and bugs.
+> Make sure you keep backups of files in case they get corrupted during a session.
 
 # Installation
-> [!IMPORTANT]
-> Currently the python bindings are only available for macOS, this will change shortly.
 
 ## Package Control
 The fastest and easiest way to install Codemp is via Package Control, the de-facto package manager for Sublime Text. 
@@ -25,35 +24,33 @@ If you are new to Sublime Text and don't have Package Control installed yet, you
 More recent builds of Sublime Text have an option in the `Tools` menu named `Install Package Control...` that will install Package Control for you.
 (won't show if package control is already installed!)
 
-Currently this package is not on the sublime package repository.
-But it can still be installed by package control.
-* Open the command palette in Sublime (`Shift+Ctrl+P` on Windows/Linux or `Shift+⌘+P` on MacOS)
-* select the `Package Control: Add Repository` command and paste `https://github.com/hexedtech/codemp-sublime.git` into the quick panel
-* open the command palette again and select `Package Control: Install Package` and select `codemp-sublime`.
+* simply open the command palette again and select `Package Control: Install Package` and select `codemp-sublime`.
 
 ## Manual
 Alternatively you can simply `git clone` this repository into your `Packages` folder:
 You can access it via sublime through `Settings -> Browse Packages...`.
 
-You will need to keep the package up to date yourself.
+You will need to keep the package up to date yourself. As well as satisfying the dependency
+(can be dont through package control.)
 
 # Usage
 ## Overview
 * All sublime windows share a single client session with a server.
 * The workspaces are window specific, similarly to a `sublime-project`. So you can open `workspace-1` in one window and `workspace-2` in another, so long as both are in the same server and you have access to them.
-* Joining a workspace will materialize a virtual file system mimicking the remote one as if it were a project folder.
+* Explore the workspaces through the quick panel browser and join any buffer available to you.
+* Start typing away.
 
 
 ## Quick start
  * first connect to server with `Codemp: Connect`
- * then join a workspace with `Codemp: Join Workspace`
- * attach directly to a buffer with `Codemp: Join Buffer` and start typing away!
+ * Explore available workspaces in the server with `Codemp: Browse Server`, it will open a quick panel browser.
 
-all commands will provide a list of available ids to chose from
+ If you already know which workspace and buffer you want to join there are the commands:
+ * `Codemp: Join Workspace`
+ * `Codemp: Join Buffer`
 
 ## Commands
 Interact with this plugin using the command palette. 
-In future versions side bar interaction will be attempted.
 
 If an argument is shown between square brakets `[arg]` then the user will be prompted
 if not present (either as simple text input or selecting from a list).
@@ -63,6 +60,11 @@ if not present (either as simple text input or selecting from a list).
 | `Codemp: Connect` | `[host]` `[user]` `[password]` | to connect to a `codemp` server specified by `host` (defaults to the reference `http://code.mp` hexedtech server).
 
 Once connected the following commands will become available:
+
+| `Codemp: Browse Server` | `None` | opens a quick panel browser to explore the workspaces of a server.
+| `Codemp: Browse Workspace` | `None` | Explores the currently joined workspace. |
+
+You should be able to completely interact only through the quick panel browser, but if required below there are the single commands:
 
 |	command label | arguments | description |
 | --- | --- | --- |
@@ -86,5 +88,6 @@ After Joining a buffer the following commands will become available:
 |	command label | arguments | description |
 | --- | --- | --- |
 |`Codemp: Leave Buffer` | `[workspace_id]` `[buffer_id]` | detach from the specified buffer and closes the corresponding view (all changes will remain in the server).
+| `Codemp: Sync` | `None` | forces an hard resync between this client and the server in case the buffer becomes corrupted. (handy when debugging and testing)
 
 ##
