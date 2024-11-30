@@ -1,6 +1,6 @@
 import sublime
 import sublime_plugin
-from typing import Dict, Generic, TypeVar
+from typing import Dict, Generic, TypeVar, Optional
 from . import globals as g
 
 # bidirectional dictionary so that we can have bidirectional
@@ -12,7 +12,6 @@ from . import globals as g
 D = TypeVar("D", Dict, dict)
 K = TypeVar("K")
 V = TypeVar("V")
-
 
 # using del bd.inverse[key] doesn't work since it can't be intercepted.
 # the only way is to iterate:
@@ -89,12 +88,12 @@ def populate_view(view, content):
             "start": 0,
             "end": view.size(),
             "content": content,
-            "change_id": view.change_id(),
+            "change_id": None,
         },
     )
 
 
-def get_view_from_local_path(path):
+def view_from_local_path(path):
     for window in sublime.windows():
         for view in window.views():
             if view.file_name() == path:
@@ -106,7 +105,7 @@ def draw_cursor_region(view, start, end, user):
     reg_flags = sublime.RegionFlags.DRAW_EMPTY
 
     user_hash = hash(user)
-
+    
     view.add_regions(
         f"{g.SUBLIME_REGIONS_PREFIX}-{user_hash}",
         [reg],
@@ -115,3 +114,8 @@ def draw_cursor_region(view, start, end, user):
         annotations=[user],  # pyright: ignore
         annotation_color=g.PALETTE[user_hash % len(g.PALETTE)],
     )
+
+T = TypeVar("T")
+def some(x: Optional[T]) -> T:
+    assert x is not None
+    return x
