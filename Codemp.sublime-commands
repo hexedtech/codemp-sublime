@@ -37,9 +37,7 @@
   	"caption": "Codemp: Connect",
   	"command": "codemp_connect",
   	"args": {
-      "server_host": "code.mp",
-      "user_name" : "cschen@codemp.dev",
-      "password" : "***REMOVED***"
+      "server_host": "code.mp"
   	}
   },
   {
