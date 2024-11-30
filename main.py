@@ -189,16 +189,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
             logger.info("got a codemp_replace_text command! but in the view listener")
 
 
-# Next TODO:
-# Server configurations:
-#   - where do we store it?
-#   - TOML? yes probably toml
 
-# * Quickpanel for connecting with stuff.
-# * Quickpanel for browsing the servers
-# * Move all "server actions" like, create, delete, rename etc. as quickpanel actions. (See SFTP plugin.)
-# * make panel for notifications!
-# * make panel for errors and logging!
 
 # Proxy Commands ( NOT USED, left just in case we need it again. )
 #############################################################################
