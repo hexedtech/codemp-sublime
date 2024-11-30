@@ -61,8 +61,10 @@ if not present (either as simple text input or selecting from a list).
 
 Once connected the following commands will become available:
 
+|	command label | arguments | description |
+| --- | --- | --- |
 | `Codemp: Browse Server` | `None` | opens a quick panel browser to explore the workspaces of a server.
-| `Codemp: Browse Workspace` | `None` | Explores the currently joined workspace. |
+| `Codemp: Browse Workspace` | `None` | Explores the currently joined workspace.
 
 You should be able to completely interact only through the quick panel browser, but if required below there are the single commands:
 
