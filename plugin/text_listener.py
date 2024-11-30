@@ -25,7 +25,7 @@ class CodempClientTextChangeListener(sublime_plugin.TextChangeListener):
         try:
             vbuff = buffers.lookupId(bid)
             logger.debug(f"local buffer change! {vbuff.id}")
-            vbuff.send_change(changes)
+            sublime.set_timeout_async(lambda: vbuff.send_change(changes))
         except KeyError:
             logger.error(f"could not find registered buffer with id {bid}")
             pass
