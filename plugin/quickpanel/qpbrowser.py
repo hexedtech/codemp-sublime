@@ -17,7 +17,6 @@ def show_qp(window, choices, on_done, placeholder=''):
         window.show_quick_panel(choices, on_done, flags, placeholder=placeholder)
     sublime.set_timeout(_, 10)
 
-
 class QPServerBrowser():
     def __init__(self, window, host, raw_input_items):
         self.window = window
@@ -55,36 +54,39 @@ class QPServerBrowser():
         self.current_wid_selection = wid
         # self.select_workspace()
         def _():
-            self.window.run_command(
-                "codemp_join_workspace",
-                {"workspace_id": self.current_wid_selection})
+            if not wid in workspaces:
+                try: self.window.run_command(
+                        "codemp_join_workspace", {"workspace_id": wid})
+                except Exception as e:
+                    return
 
             ws = workspaces.lookupId(wid)
             buffers = ws.handle.fetch_buffers()
+
             QPWorkspaceBrowser(self.window, wid, buffers.wait()).run()
         sublime.set_timeout(_)
         logger.debug("exiting the server_broswer.")
 
-    def select_workspace(self):
-        assert self.current_wid_selection
-        actions = [
-            qpi("Join", details=self.current_wid_selection, color=qpg.QP_COLOR_BLUISH, letter=qpg.QP_FORWARD),
-            # qpi("Join and open all",
-            #     details="opens all buffer in the workspace",
-            #     color=qpg.QP_COLOR_PINKISH, letter=qpg.QP_DETAILS),
-            qpi("Back", color=qpg.QP_COLOR_BLUISH, letter=qpg.QP_BACK)
-        ]
-        show_qp(self.window, actions, self.select_workspace_actions, self.qp_placeholder())
+    # def select_workspace(self):
+    #     assert self.current_wid_selection
+    #     actions = [
+    #         qpi("Join", details=self.current_wid_selection, color=qpg.QP_COLOR_BLUISH, letter=qpg.QP_FORWARD),
+    #         # qpi("Join and open all",
+    #         #     details="opens all buffer in the workspace",
+    #         #     color=qpg.QP_COLOR_PINKISH, letter=qpg.QP_DETAILS),
+    #         qpi("Back", color=qpg.QP_COLOR_BLUISH, letter=qpg.QP_BACK)
+    #     ]
+    #     show_qp(self.window, actions, self.select_workspace_actions, self.qp_placeholder())
 
-    def select_workspace_actions(self, index):
-        if index == -1:
-            return
-        elif index == 0:
-            self.window.run_command(
-                "codemp_join_workspace",
-                {"workspace_id": self.current_wid_selection})
-        elif index == 1:
-            self.run()
+    # def select_workspace_actions(self, index):
+    #     if index == -1:
+    #         return
+    #     elif index == 0:
+    #         self.window.run_command(
+    #             "codemp_join_workspace",
+    #             {"workspace_id": self.current_wid_selection})
+    #     elif index == 1:
+    #         self.run()
 
 
     def edit_server(self):
@@ -167,7 +169,6 @@ class QPWorkspaceBrowser():
                 "workspace_id": self.workspace_id,
                 "buffer_id": bid
             })
-
 
     def edit_workspace(self):
         actions = [

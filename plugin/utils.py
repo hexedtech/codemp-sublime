@@ -58,7 +58,7 @@ def status_log(msg, popup=False):
     print("[codemp] {}".format(msg))
     if popup:
         sublime.error_message(msg)
-
+        
 
 def rowcol_to_region(view, start, end):
     a = view.text_point(start[0], start[1])

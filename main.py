@@ -11,21 +11,8 @@ from .plugin.core.session import session
 from .plugin.core.workspace import workspaces
 from .plugin.core.buffers import buffers
 from .plugin.text_listener import TEXT_LISTENER
+from .plugin.input_handlers import SimpleListInput
 from .plugin import globals as g
-
-# We import these just to showcase the commands available.
-from .plugin.commands.client import CodempConnectCommand
-from .plugin.commands.client import CodempDisconnectCommand
-from .plugin.commands.client import CodempCreateWorkspaceCommand
-from .plugin.commands.client import CodempDeleteWorkspaceCommand
-from .plugin.commands.client import CodempJoinWorkspaceCommand
-from .plugin.commands.client import CodempLeaveWorkspaceCommand
-from .plugin.commands.client import CodempInviteToWorkspaceCommand
-
-from .plugin.commands.workspace import CodempCreateBufferCommand
-from .plugin.commands.workspace import CodempDeleteBufferCommand
-from .plugin.commands.workspace import CodempJoinBufferCommand
-from .plugin.commands.workspace import CodempLeaveBufferCommand
 
 from .plugin.quickpanel.qpbrowser import QPServerBrowser
 from .plugin.quickpanel.qpbrowser import QPWorkspaceBrowser
@@ -55,7 +42,6 @@ def plugin_unloaded():
     safe_listener_detach(TEXT_LISTENER)
     package_logger.removeHandler(handler)
 
-
 def kill_all():
     for ws in workspaces.lookup():
         session.client.leave_workspace(ws.id)
@@ -63,12 +49,18 @@ def kill_all():
 
     session.stop()
 
-def objects_from_view(view):
-    assert view.settings().get(g.CODEMP_VIEW_TAG, False)
-    buffid = str(view.settings().get(g.CODEMP_BUFFER_ID))
+def vbuff_form_view(view):
+    if not view.settings().get(g.CODEMP_VIEW_TAG, False):
+        raise ValueError("The view is not a Codemp Buffer.")
 
+    buffid = str(view.settings().get(g.CODEMP_BUFFER_ID))
     vbuff = buffers.lookupId(buffid)
 
+    return vbuff
+
+def objects_from_view(view):
+
+    vbuff = vbuff_form_view(view)
     vws = buffers.lookupParent(vbuff)
     win = workspaces.lookupParent(vws)
 
@@ -82,6 +74,13 @@ class CodempBrowseWorkspaceCommand(sublime_plugin.WindowCommand):
         wks = workspaces.lookupId(workspace_id)
         buffers = wks.handle.fetch_buffers()
         QPWorkspaceBrowser(self.window, workspace_id, buffers.wait()).run()
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            wslist = session.client.active_workspaces()
+            return SimpleListInput(
+                ("workspace_id", wslist),
+            )
 
 
 class CodempBrowseServerCommand(sublime_plugin.WindowCommand):
@@ -104,7 +103,7 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 
 class CodempSyncBuffer(sublime_plugin.TextCommand):
     def run(self, edit):
-        buff = buffers.lookupId(self.view.settings().get(g.CODEMP_BUFFER_ID))
+        buff = buffers.lookupId(str(self.view.settings().get(g.CODEMP_BUFFER_ID)))
         buff.sync(TEXT_LISTENER)
 
 
@@ -114,9 +113,6 @@ class EventListener(sublime_plugin.EventListener):
 
     def on_exit(self):
         kill_all()
-        # client.disconnect()
-        # if client.driver is not None:
-        #     client.driver.stop()
 
     def on_pre_close_window(self, window):
         for vws in workspaces.lookup(window):

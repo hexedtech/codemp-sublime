@@ -53,18 +53,6 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
         except KeyError:
             pass
 
-        # # if doesn't exist in the workspace, ask for creation.
-        # if vws.handle.get_buffer(buffer_id) is None:
-        #     if sublime.ok_cancel_dialog(
-        #         f"There is no buffer named '{buffer_id}' in the workspace '{workspace_id}'.\n\
-        #         Do you want to create it?",
-        #         ok_title="yes", title="Create Buffer?",
-        #     ):
-        #         sublime.run_command("codemp_create_buffer", {
-        #             "workspace_id": workspace_id,
-        #             "buffer_id": buffer_id
-        #         })
-
         # now we can defer the attaching process
         logger.debug(f"attempting to attach to {buffer_id}...")
         ctl_promise = vws.handle.attach_buffer(buffer_id)
@@ -80,12 +68,12 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
 
             safe_listener_detach(TEXT_LISTENER)
             content_promise = buff_ctl.content()
-            vbuff = buffers.add(buff_ctl, vws)
+            vbuff = buffers.register(buff_ctl, vws)
 
             content = content_promise.wait()
             populate_view(vbuff.view, content)
             if self.window.active_view() == vbuff.view:
-                # if view is already active focusing it won't trigger `on_activate`.
+                # if view is already active, focusing it won't trigger `on_activate`.
                 safe_listener_attach(TEXT_LISTENER, vbuff.view.buffer())
             else:
                 self.window.focus_view(vbuff.view)

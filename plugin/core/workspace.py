@@ -14,6 +14,8 @@ from codemp import Selection
 from .. import globals as g
 from ..utils import draw_cursor_region
 from ..utils import bidict
+
+from .session import session
 from .buffers import buffers
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,14 @@ class WorkspaceRegistry():
     def __init__(self) -> None:
         self._workspaces: bidict[WorkspaceManager, sublime.Window] = bidict()
 
+    def __contains__(self, item: str):
+        try: self.lookupId(item)
+        except KeyError: return False
+        return True
+
+    def hasactive(self):
+        return len(session.client.active_workspaces()) > 0
+
     def lookup(self, w: Optional[sublime.Window] = None) -> list[WorkspaceManager]:
         if not w:
             return list(self._workspaces.keys())
@@ -115,7 +125,7 @@ class WorkspaceRegistry():
         if not wsm: raise KeyError
         return wsm
 
-    def add(self, wshandle: codemp.Workspace) -> WorkspaceManager:
+    def register(self, wshandle: codemp.Workspace) -> WorkspaceManager:
         win = sublime.active_window()
 
         # tmpdir = tempfile.mkdtemp(prefix="codemp_")

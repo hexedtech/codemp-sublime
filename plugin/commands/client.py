@@ -1,5 +1,6 @@
 import sublime
 import sublime_plugin
+
 import logging
 import random
 
@@ -26,6 +27,7 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
                 ("user_name", f"user-{random.random()}"),
                 ("password", "password?"),
             )
+
 
         if "password" not in args:
             return SimpleTextInput(
@@ -94,17 +96,16 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
         except Exception as e:
             logger.error(f"Could not join workspace '{workspace_id}': {e}")
             sublime.error_message(f"Could not join workspace '{workspace_id}'")
-            return
+            raise e
 
         logger.debug("Joined! Adding workspace to registry")
-        workspaces.add(ws)
+        workspaces.register(ws)
 
 
 # Leave Workspace Command
 class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
-        return session.is_active() and \
-        len(workspaces.lookup(self.window)) > 0
+        return session.is_active() and workspaces.hasactive()
 
     def input(self, args):
         if "workspace_id" not in args:
@@ -123,7 +124,7 @@ class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
 
 class CodempInviteToWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
-        return session.is_active() and len(workspaces.lookup(self.window)) > 0
+        return session.is_active() and workspaces.hasactive() > 0
 
     def input(self, args):
         if "workspace_id" not in args:

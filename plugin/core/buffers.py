@@ -25,7 +25,7 @@ def bind_callback(v: sublime.View):
     multi_tryrecv_lock = threading.Lock()
 
     def _callback(bufctl: codemp.BufferController):
-        def _():
+        def _innercb():
             try:
                 # change_id = v.change_id()
                 change_id = None
@@ -67,7 +67,7 @@ def bind_callback(v: sublime.View):
 
         if multi_tryrecv_lock.acquire(blocking=False):
             logger.debug("acquiring lock")
-            sublime.set_timeout(_)
+            sublime.set_timeout(_innercb)
     return _callback
 
 class BufferManager():
@@ -102,8 +102,8 @@ class BufferManager():
     def sync(self, text_listener):
         promise = self.handle.content()
         def _():
-            content = promise.wait()
             current_contents = get_contents(self.view)
+            content = promise.wait()
             if content == current_contents:
                 return
 
@@ -116,6 +116,14 @@ class BufferManager():
 class BufferRegistry():
     def __init__(self):
         self._buffers: bidict[BufferManager, WorkspaceManager] = bidict()
+
+    def __contains__(self, item: str):
+        try: self.lookupId(item)
+        except KeyError: return False
+        return True
+
+    def hasactive(self):
+        return len(self._buffers.keys()) > 0
 
     def lookup(self, ws: Optional[WorkspaceManager] = None) -> list[BufferManager]:
         if not ws:
@@ -133,13 +141,16 @@ class BufferRegistry():
         if not bfm: raise KeyError
         return bfm
 
-    def add(self, bhandle: codemp.BufferController, wsm: WorkspaceManager):
+    def register(self, bhandle: codemp.BufferController, wsm: WorkspaceManager):
         bid = bhandle.path()
         # tmpfile = os.path.join(wsm.rootdir, bid)
         # open(tmpfile, "a").close()
     
         win = sublime.active_window()
         view = win.open_file(bid)
+        while view.is_loading():
+            pass # yes spinlock, fite me.
+
         view.set_scratch(True)
         # view.retarget(tmpfile)
         view.settings().set(g.CODEMP_VIEW_TAG, True)

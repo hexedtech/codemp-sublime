@@ -30,7 +30,7 @@ class SimpleTextInput(sublime_plugin.TextInputHandler):
 
 
 class SimpleListInput(sublime_plugin.ListInputHandler):
-    def __init__(self, *args: Tuple[str, Union["list[str]", str]]):
+    def __init__(self, *args: Tuple[str, Union[List[str], str]]):
         self.input, *self.next_inputs = args
         self.argname = self.input[0]
         self.list = self.input[1]
