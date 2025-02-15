@@ -6,12 +6,11 @@ from typing import Tuple, Union, List
 # Input handlers
 ############################################################
 class SimpleTextInput(sublime_plugin.TextInputHandler):
-    def __init__(self, *args: Tuple[str, Union[str, List[str]]]):
+    def __init__(self, args):
         self.input, *self.next_inputs = args
-        self.argname = self.input[0]
-        self.default = self.input[1]
+        self.argname, self.default = self.input
 
-    def initial_text(self):
+    def placeholder(self):
         if isinstance(self.default, str):
             return self.default
         else:
@@ -21,19 +20,17 @@ class SimpleTextInput(sublime_plugin.TextInputHandler):
         return self.argname
 
     def next_input(self, args):
-        if len(self.next_inputs) > 0:
-            if self.next_inputs[0][0] not in args:
-                if isinstance(self.next_inputs[0][1], list):
-                    return SimpleListInput(*self.next_inputs)
-                else:
-                    return SimpleTextInput(*self.next_inputs)
+        if self.next_inputs:
+            if isinstance(self.next_inputs[0][1], list):
+                return SimpleListInput(self.next_inputs)
+            else:
+                return SimpleTextInput(self.next_inputs)
 
 
 class SimpleListInput(sublime_plugin.ListInputHandler):
-    def __init__(self, *args: Tuple[str, Union[List[str], str]]):
+    def __init__(self, args):
         self.input, *self.next_inputs = args
-        self.argname = self.input[0]
-        self.list = self.input[1]
+        self.argname, self.list = self.input
 
     def name(self):
         return self.argname
@@ -45,12 +42,11 @@ class SimpleListInput(sublime_plugin.ListInputHandler):
             return [self.list]
 
     def next_input(self, args):
-        if len(self.next_inputs) > 0:
-            if self.next_inputs[0][0] not in args:
-                if isinstance(self.next_inputs[0][1], str):
-                    return SimpleTextInput(*self.next_inputs)
-                else:
-                    return SimpleListInput(*self.next_inputs)
+        if self.next_inputs:
+            if isinstance(self.next_inputs[0][1], str):
+                return SimpleTextInput(self.next_inputs)
+            else:
+                return SimpleListInput(self.next_inputs)
 
 
 # class ActiveWorkspacesIdList(sublime_plugin.ListInputHandler):
