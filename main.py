@@ -4,15 +4,19 @@ import sublime_plugin
 import logging
 
 import codemp
-from .plugin.utils import safe_listener_detach
+from .plugin.utils import is_codemp_buffer, safe_listener_detach
 from .plugin.utils import safe_listener_attach
 from .plugin.utils import some
+from .plugin.utils import is_codemp_buffer
 from .plugin.core.session import session
 from .plugin.core.workspace import workspaces
 from .plugin.core.buffers import buffers
 from .plugin.text_listener import TEXT_LISTENER
 from .plugin.input_handlers import SimpleListInput
 from .plugin import globals as g
+
+from .plugin.commands.client import *
+from .plugin.commands.workspace import *
 
 from .plugin.quickpanel.qpbrowser import QPServerBrowser
 from .plugin.quickpanel.qpbrowser import QPWorkspaceBrowser
@@ -67,9 +71,10 @@ def objects_from_view(view):
 
     return win, vws, vbuff
 
+
 class CodempBrowseWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
-        return session.is_active()
+        return len(workspaces.lookup(self.window)) > 0
 
     def run(self, workspace_id):
         wks = workspaces.lookupId(workspace_id)
@@ -161,6 +166,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
 
     def on_activated(self):
         logger.debug(f"'{self.view}' view activated!")
+        safe_listener_detach(TEXT_LISTENER)
         safe_listener_attach(TEXT_LISTENER, self.view.buffer())  # pyright: ignore
 
     def on_deactivated(self):
