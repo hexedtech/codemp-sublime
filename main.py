@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 ##############################################################################
 def plugin_loaded():
     package_logger.addHandler(handler)
-    logger.debug("plugin loaded")
+    version = codemp.version()
+    logger.debug("plugin loaded - library version: {}".format(version))
 
 def plugin_unloaded():
     logger.debug("unloading")
