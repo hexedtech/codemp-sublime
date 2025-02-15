@@ -2,7 +2,6 @@ import sublime
 import sublime_plugin
 
 import logging
-import random
 
 import codemp
 from ..core.session import session
@@ -15,27 +14,19 @@ logger = logging.getLogger(__name__)
 
 class CodempConnectCommand(sublime_plugin.WindowCommand):
     def input(self, args):
-        if "server_host" not in args:
-            return SimpleTextInput(
-                ("server_host", "http://code.mp:50053"),
-                ("user_name", f"user-{random.random()}"),
-                ("password", "password?"),
-            )
+        _args = {
+            "server_host": "code.mp",
+            "user_name": "Your username",
+            "password": "Your password"
+        }
+        missingargs = [(arg, _args[arg]) for arg in _args.keys() if arg not in args ]
 
-        if "user_name" not in args:
-            return SimpleTextInput(
-                ("user_name", f"user-{random.random()}"),
-                ("password", "password?"),
-            )
+        if missingargs:
+            return SimpleTextInput(missingargs)
 
-
-        if "password" not in args:
-            return SimpleTextInput(
-                ("password", "password?"),
-            )
 
     def input_description(self):
-        return "Server host:"
+        return "Connect:"
 
     def run(self, server_host, user_name, password):  # pyright: ignore[reportIncompatibleMethodOverride]
         def _():
@@ -130,7 +121,7 @@ class CodempInviteToWorkspaceCommand(sublime_plugin.WindowCommand):
         if "workspace_id" not in args:
             wslist = session.get_workspaces(owned=True, invited=False)
             return SimpleListInput(
-                ("workspace_id", wslist), ("user", "invitee's username")
+                [("workspace_id", wslist), ("user", "invitee's username")]
             )
 
         if "user" not in args:
