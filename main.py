@@ -51,7 +51,7 @@ def kill_all():
     session.stop()
 
 def vbuff_form_view(view):
-    if not view.settings().get(g.CODEMP_VIEW_TAG, False):
+    if not is_codemp_buffer(view):
         raise ValueError("The view is not a Codemp Buffer.")
 
     buffid = str(view.settings().get(g.CODEMP_BUFFER_ID))
@@ -103,8 +103,11 @@ class CodempReplaceTextCommand(sublime_plugin.TextCommand):
 
 
 class CodempSyncBuffer(sublime_plugin.TextCommand):
+    def is_enabled(self) -> bool:
+        return is_codemp_buffer(self.view)
+
     def run(self, edit):
-        buff = buffers.lookupId(str(self.view.settings().get(g.CODEMP_BUFFER_ID)))
+        buff = vbuff_form_view(self.view)
         buff.sync(TEXT_LISTENER)
 
 

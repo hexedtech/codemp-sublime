@@ -99,6 +99,11 @@ def view_from_local_path(path):
             if view.file_name() == path:
                 return view
 
+def is_codemp_buffer(view):
+    if view.settings().get(g.CODEMP_VIEW_TAG, False):
+        return True
+    else:
+        return False
 
 def draw_cursor_region(view, start, end, user):
     reg = rowcol_to_region(view, start, end)

@@ -13,12 +13,12 @@
       "default": "[\n\t$0\n]\n"
     }
   },
-  { "caption": "Codemp: Open Readme",
-    "command": "open_file",
-    "args": {
-      "file": "${packages}/CodempClient/README.md"
-    }
-  },
+  // { "caption": "Codemp: Open Readme",
+  //   "command": "open_file",
+  //   "args": {
+  //     "file": "${packages}/CodempClient/README.md"
+  //   }
+  // },
   {
     "caption": "Codemp: Browse Server",
     "command": "codemp_browse_server",
@@ -27,9 +27,7 @@
   {
     "caption": "Codemp: Browse Workspace",
     "command": "codemp_browse_workspace",
-    "args": {
-
-    }
+    "args": {}
   },
   {
     // # on_window_command, does not trigger when called from the command palette
