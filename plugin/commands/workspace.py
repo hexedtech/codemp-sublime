@@ -18,7 +18,7 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
         return len(workspaces.lookup(self.window)) > 0
 
     def input_description(self) -> str:
-        return "Attach: "
+        return "Join Buffer: "
 
     def input(self, args):
         if "workspace_id" not in args:
@@ -46,8 +46,8 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
 
         try: # if it exists already, focus and listen
             buff = buffers.lookupId(buffer_id)
-            safe_listener_detach(TEXT_LISTENER)
-            safe_listener_attach(TEXT_LISTENER, buff.view.buffer())
+            # safe_listener_detach(TEXT_LISTENER)
+            # safe_listener_attach(TEXT_LISTENER, buff.view.buffer())
             self.window.focus_view(buff.view)
             return
         except KeyError:
@@ -66,17 +66,10 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
                 sublime.error_message(f"Could not attach to buffer '{buffer_id}'")
                 return
 
-            safe_listener_detach(TEXT_LISTENER)
-            content_promise = buff_ctl.content()
-            vbuff = buffers.register(buff_ctl, vws)
 
-            content = content_promise.wait()
-            populate_view(vbuff.view, content)
-            if self.window.active_view() == vbuff.view:
-                # if view is already active, focusing it won't trigger `on_activate`.
-                safe_listener_attach(TEXT_LISTENER, vbuff.view.buffer())
-            else:
-                self.window.focus_view(vbuff.view)
+            vbuff = buffers.register(buff_ctl, vws)
+            vbuff.sync(TEXT_LISTENER)
+
         sublime.set_timeout_async(_)
 
 

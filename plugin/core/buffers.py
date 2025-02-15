@@ -143,16 +143,18 @@ class BufferRegistry():
 
     def register(self, bhandle: codemp.BufferController, wsm: WorkspaceManager):
         bid = bhandle.path()
-        # tmpfile = os.path.join(wsm.rootdir, bid)
-        # open(tmpfile, "a").close()
     
         win = sublime.active_window()
-        view = win.open_file(bid)
-        while view.is_loading():
-            pass # yes spinlock, fite me.
+        newfileflags = sublime.NewFileFlags.TRANSIENT | sublime.NewFileFlags.ADD_TO_SELECTION | sublime.NewFileFlags.FORCE_CLONE
+        view = win.new_file(newfileflags)
+
 
         view.set_scratch(True)
-        # view.retarget(tmpfile)
+        view.set_name(os.path.basename(bid))
+        syntax = sublime.find_syntax_for_file(bid)
+        if syntax:
+            view.assign_syntax(syntax)
+            
         view.settings().set(g.CODEMP_VIEW_TAG, True)
         view.settings().set(g.CODEMP_BUFFER_ID, bid)
         view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
