@@ -54,11 +54,15 @@ def kill_all():
 
     session.stop()
 
-def vbuff_form_view(view):
+def buffid_from_view(view):
     if not is_codemp_buffer(view):
         raise ValueError("The view is not a Codemp Buffer.")
 
     buffid = str(view.settings().get(g.CODEMP_BUFFER_ID))
+    return buffid
+
+def vbuff_form_view(view):
+    buffid = buffid_from_view(view)
     vbuff = buffers.lookupId(buffid)
 
     return vbuff
@@ -178,7 +182,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
             logger.debug("closing active view")
             safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
         try:
-            bid = str(self.view.settings().get(g.CODEMP_BUFFER_ID))
+            bid = buffid_from_view(self.view)
             vws = buffers.lookupParent(bid)
             some(self.view.window()).run_command(
                 "codemp_leave_buffer",
