@@ -80,7 +80,9 @@ class BufferManager():
 
     def __del__(self):
         logger.debug(f"dropping buffer {self.id}")
+        self.view.close()
         self.handle.clear_callback()
+        self.handle = None
 
     def __hash__(self):
         return hash(self.id)
@@ -154,7 +156,7 @@ class BufferRegistry():
         syntax = sublime.find_syntax_for_file(bid)
         if syntax:
             view.assign_syntax(syntax)
-            
+
         view.settings().set(g.CODEMP_VIEW_TAG, True)
         view.settings().set(g.CODEMP_BUFFER_ID, bid)
         view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
@@ -170,7 +172,7 @@ class BufferRegistry():
             bf = self.lookupId(bf)
 
         del self._buffers[bf]
-        bf.view.close()
+
 
 buffers = BufferRegistry()
 
