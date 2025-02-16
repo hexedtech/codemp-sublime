@@ -1,12 +1,11 @@
 import sublime_plugin
-import logging
-
-from typing import Tuple, Union, List
 
 # Input handlers
 ############################################################
 class SimpleTextInput(sublime_plugin.TextInputHandler):
     def __init__(self, args):
+        if not isinstance(args, list):
+            args = [args]
         self.input, *self.next_inputs = args
         self.argname, self.default = self.input
 
@@ -29,6 +28,8 @@ class SimpleTextInput(sublime_plugin.TextInputHandler):
 
 class SimpleListInput(sublime_plugin.ListInputHandler):
     def __init__(self, args):
+        if not isinstance(args, list):
+            args = [args]
         self.input, *self.next_inputs = args
         self.argname, self.list = self.input
 

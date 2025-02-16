@@ -4,7 +4,7 @@ import logging
 from . import qp_globals as qpg
 
 from ..core.workspace import workspaces
-from ..core.buffers import buffers
+# from ..core.buffers import buffers
 
 logger = logging.getLogger(__name__)
 
