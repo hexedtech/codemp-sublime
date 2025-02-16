@@ -1,6 +1,8 @@
 import logging
 import codemp
 
+from typing import Optional
+
 from ..utils import some
 
 logger = logging.getLogger(__name__)
@@ -10,6 +12,7 @@ class SessionManager():
 		self._running = False
 		self._driver = None
 		self._client = None
+		self._config: codemp.Config | None = None
 
 	def is_init(self):
 		return self._running and self._driver is not None
@@ -20,6 +23,10 @@ class SessionManager():
 	@property
 	def client(self):
 		return some(self._client)
+
+	@property
+	def config(self):
+		return some(self._config)
 
 	def get_or_init(self) -> codemp.Driver:
 		if self._driver:
@@ -45,12 +52,15 @@ class SessionManager():
 		self._running = False
 		self._driver = None
 
-	def connect(self, config: codemp.Config) -> codemp.Client:
+	def connect(self, config: Optional[codemp.Config] = None) -> codemp.Client:
 		if not self.is_init():
 			self.get_or_init()
 
-		self._client = codemp.connect(config).wait()
-		self.config = config
+		if config:
+			self._config = config
+
+		self._client = codemp.connect(self.config).wait()
+
 		logger.debug(f"Connected to '{self.config.host}' as user {self._client.current_user().name} (id: {self._client.current_user().id})")
 		return self._client
 

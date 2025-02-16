@@ -58,7 +58,10 @@ def status_log(msg, popup=False):
     print("[codemp] {}".format(msg))
     if popup:
         sublime.error_message(msg)
-        
+
+def get_setting(key, default=None):
+    settings = sublime.load_settings('Codemp.sublime-settings')
+    return settings.get(key, default)
 
 def rowcol_to_region(view, start, end):
     a = view.text_point(start[0], start[1])

@@ -7,44 +7,110 @@ import codemp
 from ..core.session import session
 from ..core.workspace import workspaces
 
+from ..utils import get_setting
+from ..quickpanel.qpbrowser import qpi
+from ..quickpanel.qpbrowser import show_qp
+
 from ..input_handlers import SimpleTextInput
 from ..input_handlers import SimpleListInput
 
 logger = logging.getLogger(__name__)
 
+def valid_profiles(profiles):
+    return [p for p in profiles if "name" in p]
+
+def get_profile_index_by_name(profiles, name):
+    return next((index for (index, d) in enumerate(profiles) if d["name"] == name))
+
+
+def get_default_profile(profiles):
+    i = get_profile_index_by_name(profiles, "Default")
+    return profiles[i]
+
 class CodempConnectCommand(sublime_plugin.WindowCommand):
-    def input(self, args):
-        _args = {
-            "server_host": "code.mp",
-            "user_name": "Your username",
-            "password": "Your password"
-        }
-        missingargs = [(arg, _args[arg]) for arg in _args.keys() if arg not in args ]
+    def __init__(self, window):
+        super().__init__(window)
+        self.connprofile = {}
+        self.selectedprofile = 0
 
-        if missingargs:
-            return SimpleTextInput(missingargs)
+    def is_enabled(self) -> bool:
+        return not session.is_active()
 
+    def update_config_and_connect(self):
+        config = codemp.Config(
+            username = self.connprofile["username"],
+            password = self.connprofile["password"],
+            host = self.connprofile["host"],
+            port = self.connprofile["port"],
+            tls = self.connprofile["tls"]
+        )
 
-    def input_description(self):
-        return "Connect:"
+        session._config = config
 
-    def run(self, server_host, user_name, password):  # pyright: ignore[reportIncompatibleMethodOverride]
         def _():
             try:
-                config = codemp.Config(
-                    username = user_name,
-                    password = password,
-                    host = server_host,
-                    port=50053,
-                    tls=False)
-                session.connect(config)
+                session.connect()
             except Exception as e:
                 logger.error(e)
                 sublime.error_message(
                     "Could not connect:\n Make sure the server is up\n\
                     and your credentials are correct."
                 )
+            # If the connect was successfull, save the credentials in memory for the session:
+            profiles = get_setting("profiles")
+            selected_profile_id = get_profile_index_by_name(profiles, self.connprofile["name"])
+            profiles[selected_profile_id] = self.connprofile # pyright: ignore
+            sublime.load_settings("Codemp.sublime-settings").set("profiles", profiles)
+
         sublime.set_timeout_async(_)
+
+
+    def maybe_get_password(self):
+        def __(pwd):
+            self.connprofile["password"] = pwd
+            self.update_config_and_connect()
+
+        panel = self.window.show_input_panel("Password:", "" , __, None, None)
+        # Very undocumented feature, the input panel if has the setting 'password' set to true
+        # will hide the input.
+        panel.settings().set("password", True)
+
+    def maybe_get_user(self):
+        def __(usr):
+            self.connprofile["username"] = usr
+            self.maybe_get_password()
+
+        panel = self.window.show_input_panel("username:", "" , __, None, None)
+        panel.settings().set("password", False)
+
+    def run(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+
+        def _run(index):
+            self.selectedprofile = index
+            profile = profiles[index]
+            default_profile = get_default_profile(profiles)
+            self.connprofile = {**default_profile, **profile}
+
+            if self.connprofile["username"] and self.connprofile["password"]:
+                self.update_config_and_connect()
+
+            if not self.connprofile["username"]:
+                self.maybe_get_user()
+
+            if not self.connprofile["password"]:
+                self.maybe_get_password()
+
+        profiles = valid_profiles(get_setting("profiles"))
+        qplist = []
+        for p in profiles:
+            hint = f"host: {p['host']}:{p['port']}"
+            user = p["username"]
+            pwd = " : *******" if p["password"] else ""
+            details = user + pwd
+            qplist.append(qpi(p["name"], details, letter="P", hint=hint))
+
+        show_qp(self.window, qplist, _run, placeholder="Profile")
+
 
 # Disconnect Command
 class CodempDisconnectCommand(sublime_plugin.WindowCommand):
@@ -74,7 +140,7 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
         if "workspace_id" not in args:
             wslist = session.get_workspaces()
             return SimpleListInput(
-                ("workspace_id", wslist),
+                [("workspace_id", wslist)],
             )
 
     def run(self, workspace_id):  # pyright: ignore[reportIncompatibleMethodOverride]

@@ -34,9 +34,7 @@
     // # See: https://github.com/sublimehq/sublime_text/issues/2234 
   	"caption": "Codemp: Connect",
   	"command": "codemp_connect",
-  	"args": {
-      "server_host": "code.mp"
-  	}
+  	"args": {}
   },
   {
     "caption": "Codemp: Disconnect Client",
