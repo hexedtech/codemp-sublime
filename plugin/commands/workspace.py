@@ -22,7 +22,7 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "workspace_id" not in args:
-            wslist = session.get_workspaces(owned=True, invited=True)
+            wslist = session.client.active_workspaces()
             return SimpleListInput(
                 ("workspace_id", wslist),
             )
