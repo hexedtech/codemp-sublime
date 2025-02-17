@@ -9,7 +9,7 @@ as well as a remote virtual workspace for you and your team.
 This is the reference [sublime](https://sublimetext.com) plugin for `codemp` maintained by [hexedtech](https://hexed.technology)
 
 
-> [!WARNING]
+> [!WARN]
 > This package is still under active development, expect breakages and bugs.
 > Make sure you keep backups of files in case they get corrupted during a session.
 
@@ -20,8 +20,8 @@ The fastest and easiest way to install Codemp is via Package Control, the de-fac
 Package Control not only installs your packages for you, it also ensures that they are kept up to date 
 to make sure that you always have the benefit of the latest bug fixes and features for all of your installed packages.
 
-> [!WARNING]
-> This package requires Package Control v4, to install follow the steps below:
+> [!WARN]
+> This package requires Package Control v4, to install it follow the steps below:
 
 
 If you are new to Sublime Text and don't have Package Control installed yet, you'll have to do that first. 
@@ -38,15 +38,15 @@ from urllib.request import urlretrieve;urlretrieve(url="https://github.com/wbond
 	2. rename it to `Package Control.sublime-package` (get rid of the point between `Package` and `Control`)
 	3. drag it into the `Installed Packages` folder.
 
-
-* simply open the command palette again and select `Package Control: Install Package` and select `codemp`.
+Once you've installed Package Control with the steps above, simply open the command palette and select `Package Control: Install Package` and select `codemp`.
 
 ## Manual
 Alternatively you can simply `git clone` this repository into your `Packages` folder:
 You can access it via sublime through `Settings -> Browse Packages...`.
 
-You will need to keep the package up to date yourself. As well as satisfying the dependency
-(can be dont through package control.)
+You will also need the [`codemp` python 3.8 wheel](https://pypi.org/project/codemp/#files) for your platform in your sublime `Lib` folder.
+
+You will need to keep the package up to date yourself. As well as satisfying the dependencies.
 
 # Usage
 ## Overview
