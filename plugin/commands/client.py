@@ -16,8 +16,10 @@ from ..input_handlers import SimpleListInput
 
 logger = logging.getLogger(__name__)
 
+
 def valid_profiles(profiles):
     return [p for p in profiles if "name" in p]
+
 
 def get_profile_index_by_name(profiles, name):
     return next((index for (index, d) in enumerate(profiles) if d["name"] == name))
@@ -27,11 +29,11 @@ def get_default_profile(profiles):
     i = get_profile_index_by_name(profiles, "Default")
     return profiles[i]
 
+
 class CodempConnectCommand(sublime_plugin.WindowCommand):
     def __init__(self, window):
         super().__init__(window)
         self.connprofile = {}
-        self.selectedprofile = 0
 
     def is_enabled(self) -> bool:
         return not session.is_active()
@@ -70,7 +72,7 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
             self.connprofile["password"] = pwd
             self.update_config_and_connect()
 
-        panel = self.window.show_input_panel("Password:", "" , __, None, None)
+        panel = self.window.show_input_panel("Password:", "", __, None, None)
         # Very undocumented feature, the input panel if has the setting 'password' set to true
         # will hide the input.
         panel.settings().set("password", True)
@@ -80,13 +82,12 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
             self.connprofile["username"] = usr
             self.maybe_get_password()
 
-        panel = self.window.show_input_panel("username:", "" , __, None, None)
+        panel = self.window.show_input_panel("Username:", "", __, None, None)
         panel.settings().set("password", False)
 
     def run(self):  # pyright: ignore[reportIncompatibleMethodOverride]
 
         def _run(index):
-            self.selectedprofile = index
             profile = profiles[index]
             default_profile = get_default_profile(profiles)
             self.connprofile = {**default_profile, **profile}
@@ -94,10 +95,10 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
             if self.connprofile["username"] and self.connprofile["password"]:
                 self.update_config_and_connect()
 
-            if not self.connprofile["username"]:
+            if not self.connprofile["username"] and not self.connprofile["password"]:
                 self.maybe_get_user()
 
-            if not self.connprofile["password"]:
+            if self.connprofile["username"] and not self.connprofile["password"]:
                 self.maybe_get_password()
 
         profiles = valid_profiles(get_setting("profiles"))
