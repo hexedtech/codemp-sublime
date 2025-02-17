@@ -107,6 +107,8 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
             finally:
                 if not vws.handle.detach_buffer(buffer_id):
                     logger.error(f"could not leave the buffer {buffer_id}.")
+                else:
+                    logger.debug(f"successfully detached from {buffer_id}.")
         sublime.set_timeout_async(_)
 
 # Leave Buffer Comand
