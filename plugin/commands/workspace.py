@@ -101,15 +101,15 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
             logging.error("The desired buffer is not managed by the workspace.")
             return
 
+        # The call must happen separately, otherwise it causes sublime to crash...
+        # no idea why...
         def _():
-            try:
-                buffers.remove(buffer_id)
-            finally:
-                if not vws.handle.detach_buffer(buffer_id):
-                    logger.error(f"could not leave the buffer {buffer_id}.")
-                else:
-                    logger.debug(f"successfully detached from {buffer_id}.")
-        sublime.set_timeout_async(_)
+            buffers.remove(buffer_id)
+            if not vws.handle.detach_buffer(buffer_id):
+                logger.error(f"could not leave the buffer {buffer_id}.")
+            else:
+                logger.debug(f"successfully detached from {buffer_id}.")
+        sublime.set_timeout(_, 10)
 
 # Leave Buffer Comand
 class CodempCreateBufferCommand(sublime_plugin.WindowCommand):
@@ -155,6 +155,7 @@ class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
         return "Delete buffer: "
 
     def input(self, args):
+        # FIXME: THIS DOES NOT WORK SORRY
         if "workspace_id" not in args:
             return SimpleListInput(
                 ("workspace_id", session.get_workspaces(owned=True, invited=False)),
