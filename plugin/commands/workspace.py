@@ -156,9 +156,8 @@ class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "workspace_id" not in args:
-            wslist = session.get_workspaces(owned=True, invited=False)
             return SimpleListInput(
-                ("workspace_id", wslist),
+                ("workspace_id", session.get_workspaces(owned=True, invited=False)),
             )
 
         if "buffer_id" not in args:
