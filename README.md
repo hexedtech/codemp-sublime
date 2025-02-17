@@ -20,11 +20,26 @@ The fastest and easiest way to install Codemp is via Package Control, the de-fac
 Package Control not only installs your packages for you, it also ensures that they are kept up to date 
 to make sure that you always have the benefit of the latest bug fixes and features for all of your installed packages.
 
-If you are new to Sublime Text and don't have Package Control installed yet, you'll have to do that first. 
-More recent builds of Sublime Text have an option in the `Tools` menu named `Install Package Control...` that will install Package Control for you.
-(won't show if package control is already installed!)
+> [!WARNING]
+> This package requires Package Control v4, to install follow the steps below:
 
-* simply open the command palette again and select `Package Control: Install Package` and select `codemp-sublime`.
+
+If you are new to Sublime Text and don't have Package Control installed yet, you'll have to do that first. 
+<!-- More recent builds of Sublime Text have an option in the `Tools` menu named `Install Package Control...` that will install Package Control for you.
+(won't show if package control is already installed!) -->
+Unfortunately the installation of `Package Control v4` is not yet very streamlined, so for the time being you'll need to install
+it manually:
+- The first approach is to copy and paste the following line into your console (open with `ctrl+~`) press enter and then restart sublime:
+```python
+from urllib.request import urlretrieve;urlretrieve(url="https://github.com/wbond/package_control/releases/latest/download/Package.Control.sublime-package", filename=sublime.installed_packages_path() + '/Package Control.sublime-package')
+```
+- Alternatively, you can:
+	1. download the latest [Package Control Release](https://github.com/wbond/package_control/releases/download/4.0.8/Package.Control.sublime-package)
+	2. rename it to `Package Control.sublime-package` (get rid of the point between `Package` and `Control`)
+	3. drag it into the `Installed Packages` folder.
+
+
+* simply open the command palette again and select `Package Control: Install Package` and select `codemp`.
 
 ## Manual
 Alternatively you can simply `git clone` this repository into your `Packages` folder:
