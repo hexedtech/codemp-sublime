@@ -117,16 +117,17 @@ class CodempCreateBufferCommand(sublime_plugin.WindowCommand):
         return "Create Buffer: "
 
     def input(self, args):
-        if "workspace_id" not in args:
-            wslist = session.client.active_workspaces()
-            return SimpleListInput(
-                ("workspace_id", wslist),
-            )
-
-        if "buffer_id" not in args:
-            return SimpleTextInput(
-                ("buffer_id", "new buffer name"),
-            )
+        missingargs = [arg for arg in ["workspace_id", "buffer_id"] if arg not in args]
+        for arg in missingargs:
+            if arg == "workspace_id":
+                return SimpleListInput([
+                    ("workspace_id", session.client.active_workspaces()),
+                    ("buffer_id", "new buffer name")
+                ])
+            if arg == "buffer_id":
+                return SimpleTextInput(
+                    ("buffer_id", "new buffer name"),
+                )
 
     def run(self, workspace_id, buffer_id):# pyright: ignore[reportIncompatibleMethodOverride]
         try: vws = workspaces.lookupId(workspace_id)
