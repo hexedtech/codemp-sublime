@@ -1,6 +1,7 @@
 import sublime
 import sublime_plugin
 import logging
+import gc
 
 from ..core.session import session
 from ..core.workspace import workspaces
