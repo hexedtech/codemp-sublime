@@ -107,8 +107,7 @@ class QPServerBrowser():
         if index == 1:
             def create_workspace(name):
                 self.window.run_command(
-                    "codemp_create_workspace",
-                    {"workspace_id": name})
+                    "codemp_create_workspace", {"workspace_id": name})
             self.window.show_input_panel("New Workspace Name", "", create_workspace, None, self.edit_server)
 
         if index == 2:
@@ -183,7 +182,7 @@ class QPWorkspaceBrowser():
 
     def edit_workspace_actions(self, index):
         if index == -1 or index == 0:
-            self.edit_workspace()
+            self.run()
         elif index == 1:
             self.window.run_command(
                 "codemp_leave_workspace",
