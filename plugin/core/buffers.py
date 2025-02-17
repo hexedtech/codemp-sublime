@@ -146,7 +146,9 @@ class BufferRegistry():
         bid = bhandle.path()
     
         win = sublime.active_window()
-        newfileflags = sublime.NewFileFlags.TRANSIENT | sublime.NewFileFlags.ADD_TO_SELECTION | sublime.NewFileFlags.FORCE_CLONE
+        newfileflags = sublime.NewFileFlags.TRANSIENT \
+            | sublime.NewFileFlags.ADD_TO_SELECTION \
+            | sublime.NewFileFlags.FORCE_CLONE
         view = win.new_file(newfileflags)
 
 
@@ -171,6 +173,7 @@ class BufferRegistry():
             bf = self.lookupId(bf)
 
         del self._buffers[bf]
+
 
 
 buffers = BufferRegistry()
