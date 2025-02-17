@@ -101,17 +101,15 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
             logging.error("The desired buffer is not managed by the workspace.")
             return
 
-        try:
-            buffers.remove(buffer_id)
-            # del buff
-            # gc.collect()
-        finally:
-            if not vws.handle.detach_buffer(buffer_id):
-                logger.error(f"could not leave the buffer {buffer_id}.")
-            else:
-                logger.debug(f"successfully detached from {buffer_id}.")
+        def _():
+            try:
+                buffers.remove(buffer_id)
+            finally:
+                if not vws.handle.detach_buffer(buffer_id):
+                    logger.error(f"could not leave the buffer {buffer_id}.")
+        sublime.set_timeout_async(_)
 
-# Create Buffer Comand
+# Leave Buffer Comand
 class CodempCreateBufferCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return len(workspaces.lookup()) > 0
