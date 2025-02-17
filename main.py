@@ -183,10 +183,8 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
             safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
         try:
             bid = buffid_from_view(self.view)
-            vws = buffers.lookupParent(bid)
             some(self.view.window()).run_command(
-                "codemp_leave_buffer",
-                {"workspace_id": vws.id, "buffer_id": bid})
+                "codemp_leave_buffer", {"buffer_id": bid})
         except KeyError:
             return
 

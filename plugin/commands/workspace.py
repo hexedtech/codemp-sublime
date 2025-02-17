@@ -82,22 +82,15 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
         return "Leave: "
 
     def input(self, args):
-        if "workspace_id" not in args:
-            wslist = session.client.active_workspaces()
-            return SimpleListInput(
-                ("workspace_id", wslist),
-            )
-
         if "buffer_id" not in args:
-            bflist = [bf.id for bf in buffers.lookup(args["workspace_id"])]
             return SimpleListInput(
-                ("buffer_id", bflist)
+                ("buffer_id", [bf.id for bf in buffers.lookup()])
             )
 
-    def run(self, workspace_id, buffer_id): # pyright: ignore[reportIncompatibleMethodOverride]
+    def run(self, buffer_id): # pyright: ignore[reportIncompatibleMethodOverride]
         try:
-            buffers.lookupId(buffer_id)
-            vws = workspaces.lookupId(workspace_id)
+            buff = buffers.lookupId(buffer_id)
+            vws = buffers.lookupParent(buff)
         except KeyError:
             sublime.error_message(f"You are not attached to the buffer '{buffer_id}'")
             logging.warning(f"You are not attached to the buffer '{buffer_id}'")
