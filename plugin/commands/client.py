@@ -167,9 +167,8 @@ class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
 
     def input(self, args):
         if "workspace_id" not in args:
-            wslist = session.client.active_workspaces()
             return SimpleListInput(
-                ("workspace_id", wslist),
+                ("workspace_id", session.client.active_workspaces()),
             )
 
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
@@ -178,6 +177,8 @@ class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
         finally:
             if not session.client.leave_workspace(workspace_id):
                 logger.error(f"could not leave the workspace '{workspace_id}'")
+            else:
+                logger.debug(f"successfully left the workspace '{workspace_id}'")
 
 
 class CodempInviteToWorkspaceCommand(sublime_plugin.WindowCommand):
