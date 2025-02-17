@@ -199,3 +199,4 @@ class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
         except KeyError: pass
         finally:
             vws.handle.delete_buffer(buffer_id).wait()
+

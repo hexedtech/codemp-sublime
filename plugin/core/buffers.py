@@ -82,7 +82,6 @@ class BufferManager():
         logger.debug(f"dropping buffer {self.id}")
         self.view.close()
         self.handle.clear_callback()
-        self.handle = None
 
     def __hash__(self):
         return hash(self.id)
