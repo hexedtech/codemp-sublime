@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 def qpi(text, details="", color=qpg.QP_COLOR_NONE, letter="", name="", hint="", prefix=""):
     return sublime.QuickPanelItem(text, details, annotation=hint, kind=(color, letter, name))
 
-def show_qp(window, choices, on_done, placeholder=''):
+def show_qp(window, choices, on_done, placeholder='', keepopen=True):
     def _():
-        flags = sublime.KEEP_OPEN_ON_FOCUS_LOST
+        flags = sublime.KEEP_OPEN_ON_FOCUS_LOST if keepopen else 0
         window.show_quick_panel(choices, on_done, flags, placeholder=placeholder)
     sublime.set_timeout(_, 10)
 
@@ -66,27 +66,6 @@ class QPServerBrowser():
             QPWorkspaceBrowser(self.window, wid, buffers.wait()).run()
         sublime.set_timeout(_)
         logger.debug("exiting the server_broswer.")
-
-    # def select_workspace(self):
-    #     assert self.current_wid_selection
-    #     actions = [
-    #         qpi("Join", details=self.current_wid_selection, color=qpg.QP_COLOR_BLUISH, letter=qpg.QP_FORWARD),
-    #         # qpi("Join and open all",
-    #         #     details="opens all buffer in the workspace",
-    #         #     color=qpg.QP_COLOR_PINKISH, letter=qpg.QP_DETAILS),
-    #         qpi("Back", color=qpg.QP_COLOR_BLUISH, letter=qpg.QP_BACK)
-    #     ]
-    #     show_qp(self.window, actions, self.select_workspace_actions, self.qp_placeholder())
-
-    # def select_workspace_actions(self, index):
-    #     if index == -1:
-    #         return
-    #     elif index == 0:
-    #         self.window.run_command(
-    #             "codemp_join_workspace",
-    #             {"workspace_id": self.current_wid_selection})
-    #     elif index == 1:
-    #         self.run()
 
 
     def edit_server(self):
@@ -186,14 +165,12 @@ class QPWorkspaceBrowser():
             self.run()
         elif index == 1:
             self.window.run_command(
-                "codemp_leave_workspace",
-                {"workspace_id": self.workspace_id})
+                "codemp_leave_workspace", {"workspace_id": self.workspace_id})
             self.window.run_command(
                 "codemp_browse_server", {})
         elif index == 2:
             self.window.run_command(
-                "codemp_invite_to_workspace",
-                {"workspace_id": self.workspace_id})
+                "codemp_invite_to_workspace", {"workspace_id": self.workspace_id})
         elif index == 3:
             def create_buffer(name):
                 self.window.run_command(
@@ -212,9 +189,10 @@ class QPWorkspaceBrowser():
             def delete_buffer(index):
                 if index == -1 or index == 0:
                     self.edit_workspace()
+                    return
 
                 # same warning as the server browser. Check your indexed 3 times
-                selected = self.entries[index+1]
+                selected = self.entries[index]
                 self.window.run_command(
                     "codemp_delete_buffer",
                     {
@@ -222,17 +200,19 @@ class QPWorkspaceBrowser():
                         "buffer_id": selected.trigger
                     })
 
-                def _():
-                    buffers = workspaces.lookupId(self.workspace_id).handle.fetch_buffers()
-                    QPWorkspaceBrowser(self.window, self.workspace_id, buffers.wait()).run()
-                sublime.set_timeout(_)
+                self.window.run_command(
+                    "codemp_browse_workspace", {"workspace_id": self.workspace_id})
 
             if len(self.entries) < 2:
                 sublime.message_dialog("The workspace is empty!")
                 sublime.set_timeout(self.run, 10)
             else:
-                show_qp(self.window, self.entries[1:], delete_buffer, self.qp_placeholder())
+                selentries = self.entries
+                selentries[0] = qpi("Back", color=qpg.QP_COLOR_CYANISH, letter=qpg.QP_BACK)
+                show_qp(self.window, selentries, delete_buffer, self.qp_placeholder(), keepopen=False)
+
 
         elif index == 5:
             sublime.message_dialog("renaming is not yet implemented.")
             self.edit_workspace()
+        logger.debug("Exiting the workspace browser")
