@@ -71,6 +71,7 @@ class QPServerBrowser():
     def edit_server(self):
         actions = [
             qpi("Back", color=qpg.QP_COLOR_CYANISH, letter=qpg.QP_BACK),
+            qpi("Disconnect", color=qpg.QP_COLOR_REDISH, letter=qpg.QP_BACK),
             qpi("New Workspace", color=qpg.QP_COLOR_GREENISH, letter=qpg.QP_ADD),
             qpi("Delete Workspace", color=qpg.QP_COLOR_REDISH, letter=qpg.QP_NO)
         ]
@@ -84,27 +85,37 @@ class QPServerBrowser():
             self.run()
 
         if index == 1:
+            self.window.run_command("codemp_disconnect", {})
+
+        if index == 2:
             def create_workspace(name):
                 self.window.run_command(
                     "codemp_create_workspace", {"workspace_id": name})
-                self.run()
+                self.window.run_command(
+                    "codemp_browse_server", {})
+
             self.window.show_input_panel("New Workspace Name", "", create_workspace, None, self.edit_server)
 
-        if index == 2:
+        if index == 3:
             def delete_workspace(index):
                 if index == -1 or index == 0:
                     self.edit_server()
-                # we must be careful here. here with index 1 we are selecting the correct
-                # workspace, because the index zero in the entries is the workspace action submenu.
-                # which is occupied by the back action.
-                # if we add extra non workspace entries, then we must shift the index accordingly.
-                # Do this differently?
+                    return
+
                 selected = self.entries[index]
                 self.window.run_command(
                     "codemp_delete_workspace",
                     {"workspace_id": selected.trigger})
+                self.window.run_command(
+                    "codemp_browse_server", {})
 
-
+            if len(self.entries) < 2:
+                sublime.message_dialog("You don't have workspaces to delete!")
+                sublime.set_timeout(self.run, 10)
+            else:
+                selentries = self.entries
+                selentries[0] = qpi("Back", color=qpg.QP_COLOR_CYANISH, letter=qpg.QP_BACK)
+                show_qp(self.window, selentries, delete_workspace, self.qp_placeholder(), keepopen=False)
             show_qp(self.window, self.entries, delete_workspace, self.qp_placeholder())
 
 

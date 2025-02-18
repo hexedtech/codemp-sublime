@@ -208,9 +208,9 @@ class CodempCreateWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return session.is_active()
 
-    def input(self, args):
-        if "workspace_id" not in args:
-            return SimpleTextInput(("workspace_id", "new workspace name"))
+    # def input(self, args):
+    #     if "workspace_id" not in args:
+    #         return SimpleTextInput(("workspace_id", "new workspace name"))
 
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
         try:
@@ -224,25 +224,26 @@ class CodempDeleteWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return session.is_active()
 
-    def input(self, args):
-        workspaces = session.get_workspaces(owned=True, invited=False)  # noqa: F841
-        if "workspace_id" not in args:
-            return SimpleListInput(("workspace_id", workspaces))
+    # def input(self, args):
+    #     workspaces = session.get_workspaces(owned=True, invited=False)  # noqa: F841
+    #     if "workspace_id" not in args:
+    #         return SimpleListInput(("workspace_id", workspaces))
 
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
-        try:
-            vws = workspaces.lookupId(workspace_id)
+        if workspace_id in workspaces:
             if not sublime.ok_cancel_dialog(
                 "You are currently attached to '{workspace_id}'.\n\
                 Do you want to detach and delete it?",
                 ok_title="yes", title="Delete Workspace?",
-            ):
-                return
+            ): return
             self.window.run_command(
                 "codemp_leave_workspace",
                 {"workspace_id": workspace_id})
+        else:
+            if not sublime.ok_cancel_dialog(
+                f"Confirm you want to delete the workspace '{workspace_id}'",
+                ok_title="delete", title="Delete Workspace?",
+            ): return
 
-        except KeyError: pass
-        finally:
-            session.client.delete_workspace(workspace_id)
+        session.client.delete_workspace(workspace_id).wait()
 
