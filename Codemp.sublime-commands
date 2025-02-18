@@ -94,22 +94,22 @@
       // 'buffer_id': 'test'
   	}
   },
-  {
-    "caption": "Codemp: Create Buffer",
-    "command": "codemp_create_buffer",
-    "args": {
-      // 'workspace_id': 'asd'
-      // 'buffer_id': 'test'
-    }
-  },
-  {
-    "caption": "Codemp: Delete Buffer",
-    "command": "codemp_delete_buffer",
-    "args": {
-      // 'workspace_id': 'asd'
-      // 'buffer_id': 'test'
-    }
-  },
+  // {
+  //   "caption": "Codemp: Create Buffer",
+  //   "command": "codemp_create_buffer",
+  //   "args": {
+  //     // 'workspace_id': 'asd'
+  //     // 'buffer_id': 'test'
+  //   }
+  // },
+  // {
+  //   "caption": "Codemp: Delete Buffer",
+  //   "command": "codemp_delete_buffer",
+  //   "args": {
+  //     // 'workspace_id': 'asd'
+  //     // 'buffer_id': 'test'
+  //   }
+  // },
   {
     "caption": "Codemp: Sync",
     "command": "codemp_sync_buffer",

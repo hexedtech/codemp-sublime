@@ -175,7 +175,6 @@ class BufferRegistry():
         del self._buffers[bf]
 
 
-
 buffers = BufferRegistry()
 
 

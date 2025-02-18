@@ -1,5 +1,6 @@
 import sublime_plugin
 
+
 # Input handlers
 ############################################################
 class SimpleTextInput(sublime_plugin.TextInputHandler):

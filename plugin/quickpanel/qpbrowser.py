@@ -108,6 +108,7 @@ class QPServerBrowser():
             def create_workspace(name):
                 self.window.run_command(
                     "codemp_create_workspace", {"workspace_id": name})
+                self.run()
             self.window.show_input_panel("New Workspace Name", "", create_workspace, None, self.edit_server)
 
         if index == 2:
@@ -201,21 +202,37 @@ class QPWorkspaceBrowser():
                         "workspace_id": self.workspace_id,
                         "buffer_id": name
                     })
-            self.window.show_input_panel("New Buffer Name", "", create_buffer, None, self.edit_workspace)
+
+                self.window.run_command(
+                    "codemp_browse_workspace", {"workspace_id": self.workspace_id})
+
+            panel = self.window.show_input_panel("New Buffer Name", "", create_buffer, None, self.edit_workspace)
+            panel.settings().set("password", False)
         elif index == 4:
             def delete_buffer(index):
                 if index == -1 or index == 0:
                     self.edit_workspace()
 
                 # same warning as the server browser. Check your indexed 3 times
-                selected = self.entries[index]
+                selected = self.entries[index+1]
                 self.window.run_command(
                     "codemp_delete_buffer",
                     {
                         "workspace_id": self.workspace_id,
                         "buffer_id": selected.trigger
                     })
-            show_qp(self.window, self.entries, delete_buffer, self.qp_placeholder())
+
+                def _():
+                    buffers = workspaces.lookupId(self.workspace_id).handle.fetch_buffers()
+                    QPWorkspaceBrowser(self.window, self.workspace_id, buffers.wait()).run()
+                sublime.set_timeout(_)
+
+            if len(self.entries) < 2:
+                sublime.message_dialog("The workspace is empty!")
+                sublime.set_timeout(self.run, 10)
+            else:
+                show_qp(self.window, self.entries[1:], delete_buffer, self.qp_placeholder())
+
         elif index == 5:
             sublime.message_dialog("renaming is not yet implemented.")
             self.edit_workspace()

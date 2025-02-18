@@ -116,28 +116,10 @@ class CodempCreateBufferCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return len(workspaces.lookup()) > 0
 
-    def input_description(self) -> str:
-        return "Create Buffer: "
-
-    def input(self, args):
-        missingargs = [arg for arg in ["workspace_id", "buffer_id"] if arg not in args]
-        for arg in missingargs:
-            if arg == "workspace_id":
-                return SimpleListInput([
-                    ("workspace_id", session.client.active_workspaces()),
-                    ("buffer_id", "new buffer name")
-                ])
-            if arg == "buffer_id":
-                return SimpleTextInput(
-                    ("buffer_id", "new buffer name"),
-                )
-
     def run(self, workspace_id, buffer_id):# pyright: ignore[reportIncompatibleMethodOverride]
         try: vws = workspaces.lookupId(workspace_id)
         except KeyError:
-            sublime.error_message(
-                f"You are not attached to the workspace '{workspace_id}'"
-            )
+            sublime.error_message(f"You are not attached to the workspace '{workspace_id}'")
             logging.warning(f"You are not attached to the workspace '{workspace_id}'")
             return
 
@@ -151,53 +133,30 @@ class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return len(workspaces.lookup()) > 0
 
-    def input_description(self) -> str:
-        return "Delete buffer: "
-
-    def input(self, args):
-        # FIXME: THIS DOES NOT WORK SORRY
-        if "workspace_id" not in args:
-            return SimpleListInput(
-                ("workspace_id", session.get_workspaces(owned=True, invited=False)),
-            )
-
-        if "buffer_id" not in args:
-            try: ws = workspaces.lookupId(args["workspace_id"])
-            except KeyError:
-                sublime.error_message("Workspace does not exists or is not attached.")
-                return sublime_plugin.BackInputHandler()
-
-            bflist = ws.handle.fetch_buffers().wait()
-            return SimpleListInput(
-                ("buffer_id", bflist),
-            )
-
     def run(self, workspace_id, buffer_id):# pyright: ignore[reportIncompatibleMethodOverride]
+
         try: vws = workspaces.lookupId(workspace_id)
         except KeyError:
-            sublime.error_message(
-                f"You are not attached to the workspace '{workspace_id}'"
-            )
+            sublime.error_message(f"You are not attached to the workspace '{workspace_id}'")
             logging.warning(f"You are not attached to the workspace '{workspace_id}'")
             return
 
-        if not sublime.ok_cancel_dialog(
-            f"Confirm you want to delete the buffer '{buffer_id}'",
-            ok_title="delete", title="Delete Buffer?",
-        ): return
+        if buffer_id in buffers:
 
-        try:
-            buffers.lookupId(buffer_id)
             if not sublime.ok_cancel_dialog(
                 "You are currently attached to '{buffer_id}'.\n\
                 Do you want to detach and delete it?",
                 ok_title="yes", title="Delete Buffer?",
-            ):
-                return
+            ): return
+
             self.window.run_command(
-                "codemp_leave_buffer",
-                { "workspace_id": workspace_id, "buffer_id": buffer_id })
-        except KeyError: pass
-        finally:
-            vws.handle.delete_buffer(buffer_id).wait()
+                "codemp_leave_buffer", {"buffer_id": buffer_id })
+
+        else:
+            if not sublime.ok_cancel_dialog(
+                f"Confirm you want to delete the buffer '{buffer_id}'",
+                ok_title="delete", title="Delete Buffer?",
+            ): return
+
+        vws.handle.delete_buffer(buffer_id).wait()
 
