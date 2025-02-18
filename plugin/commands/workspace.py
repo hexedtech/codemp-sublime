@@ -63,7 +63,7 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
                 buff_ctl = ctl_promise.wait()
                 logger.debug("attach successfull!")
             except Exception as e:
-                logging.error(f"error when attaching to buffer '{id}':\n\n {e}")
+                logger.error(f"error when attaching to buffer '{id}':\n\n {e}")
                 sublime.error_message(f"Could not attach to buffer '{buffer_id}'")
                 return
 
@@ -94,11 +94,11 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
             vws = buffers.lookupParent(buff)
         except KeyError:
             sublime.error_message(f"You are not attached to the buffer '{buffer_id}'")
-            logging.warning(f"You are not attached to the buffer '{buffer_id}'")
+            logger.warning(f"You are not attached to the buffer '{buffer_id}'")
             return
 
         if not vws.handle.get_buffer(buffer_id):
-            logging.error("The desired buffer is not managed by the workspace.")
+            logger.error("The desired buffer is not managed by the workspace.")
             return
 
         # The call must happen separately, otherwise it causes sublime to crash...
@@ -120,11 +120,11 @@ class CodempCreateBufferCommand(sublime_plugin.WindowCommand):
         try: vws = workspaces.lookupId(workspace_id)
         except KeyError:
             sublime.error_message(f"You are not attached to the workspace '{workspace_id}'")
-            logging.warning(f"You are not attached to the workspace '{workspace_id}'")
+            logger.warning(f"You are not attached to the workspace '{workspace_id}'")
             return
 
         vws.handle.create_buffer(buffer_id)
-        logging.info(
+        logger.info(
             "created buffer '{buffer_id}' in the workspace '{workspace_id}'.\n\
             To interact with it you need to attach to it with Codemp: Attach."
         )
@@ -138,7 +138,7 @@ class CodempDeleteBufferCommand(sublime_plugin.WindowCommand):
         try: vws = workspaces.lookupId(workspace_id)
         except KeyError:
             sublime.error_message(f"You are not attached to the workspace '{workspace_id}'")
-            logging.warning(f"You are not attached to the workspace '{workspace_id}'")
+            logger.warning(f"You are not attached to the workspace '{workspace_id}'")
             return
 
         if buffer_id in buffers:
