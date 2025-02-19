@@ -22,22 +22,24 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
         return "Join Buffer: "
 
     def input(self, args):
-        if "workspace_id" not in args:
-            wslist = session.client.active_workspaces()
-            return SimpleListInput(
-                ("workspace_id", wslist),
-            )
+        for name in ["workspace_id", "buffer_id"]:
+            if name not in args:
+                if name == "workspace_id":
+                    wslist = session.client.active_workspaces()
+                    return SimpleListInput(
+                        ("workspace_id", wslist),
+                    )
 
-        if "buffer_id" not in args:
-            try: ws = workspaces.lookupId(args["workspace_id"])
-            except KeyError:
-                sublime.error_message("Workspace does not exists or is not active.")
-                return None
+                if name == "buffer_id":
+                    try: ws = workspaces.lookupId(args["workspace_id"])
+                    except KeyError:
+                        sublime.error_message("Workspace does not exists or is not active.")
+                        return None
 
-            bflist = ws.handle.fetch_buffers().wait()
-            return SimpleListInput(
-                ("buffer_id", bflist),
-            )
+                    bflist = ws.handle.fetch_buffers().wait()
+                    return SimpleListInput(
+                        ("buffer_id", bflist),
+                    )
 
     def run(self, workspace_id, buffer_id): # pyright: ignore[reportIncompatibleMethodOverride]
         try: vws = workspaces.lookupId(workspace_id)
@@ -47,8 +49,6 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
 
         try: # if it exists already, focus and listen
             buff = buffers.lookupId(buffer_id)
-            # safe_listener_detach(TEXT_LISTENER)
-            # safe_listener_attach(TEXT_LISTENER, buff.view.buffer())
             self.window.focus_view(buff.view)
             return
         except KeyError:
@@ -66,7 +66,6 @@ class CodempJoinBufferCommand(sublime_plugin.WindowCommand):
                 logger.error(f"error when attaching to buffer '{id}':\n\n {e}")
                 sublime.error_message(f"Could not attach to buffer '{buffer_id}'")
                 return
-
 
             vbuff = buffers.register(buff_ctl, vws)
             vbuff.sync(TEXT_LISTENER)
