@@ -181,6 +181,7 @@ class CodempClientViewEventListener(sublime_plugin.ViewEventListener):
         if self.view == sublime.active_window().active_view():
             logger.debug("closing active view")
             safe_listener_detach(TEXT_LISTENER)  # pyright: ignore
+
         try:
             bid = buffid_from_view(self.view)
             some(self.view.window()).run_command(

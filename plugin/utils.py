@@ -85,6 +85,7 @@ def get_contents(view):
 
 
 def populate_view(view, content):
+    cursorpos = view.sel()[0]
     view.run_command(
         "codemp_replace_text",
         {
@@ -94,6 +95,8 @@ def populate_view(view, content):
             "change_id": None,
         },
     )
+    view.sel().clear()
+    view.sel().add(cursorpos)
 
 
 def view_from_local_path(path):
