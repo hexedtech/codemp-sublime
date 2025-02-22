@@ -91,13 +91,91 @@ class CodempLeaveBufferCommand(sublime_plugin.WindowCommand):
         # The call must happen separately, otherwise it causes sublime to crash...
         # no idea why...
         sublime.set_timeout(lambda: buffers.remove(buffer_id), 10)
+
+
+class CodempShareLocalBufferCommand(sublime_plugin.WindowCommand):
+    def is_enabled(self) -> bool:
+        return workspaces.hasactive()
+
+    def input_description(self) -> str:
+        return "Share to workspace:"
+
+    def input(self, args):
+        if "workspace_id" not in args:
+            return SimpleListInput(
+                ("workspace_id", session.client.active_workspaces())
+            )
+
+    def run(self, workspace_id: str):
+        # get the current active window
+        # compute the buffer name:
+        #   just the name is alone,
+        #   the relative path if in a project
+        # check existance:
+        #   if existing, ask for overwrite, and beam stuff up
+        #   if not, create and then beam stuff up.
+        view = self.window.active_view()
+        if view:
+            self.wid = workspace_id
+            self.make_buffer_id(view)
+
+    def make_buffer_id(self, view: sublime.View):
+        # if file_name is nothing, then the buffer is not saved to disk,
+        # and only has a name.
+
+        isephimeral = view.file_name() is None
+
+        if isephimeral:
+            tmpbid = view.name()
+            # ask for confirmation of the buffer name.
+            self.window.show_input_panel("Share with name:",
+                tmpbid,
+                lambda str: self.check_validity_and_share(str, view),
+                view.set_name,
+                lambda: view.set_name(tmpbid))
+            return
+
+        windowhasproject = self.window.project_data() is not None
+        tmpbid = str(view.file_name())
+        if not windowhasproject:
+            self.check_validity_and_share(os.path.basename(tmpbid), view)
+            return
+
+        projectfolders = self.window.project_data().get("folders") #pyright: ignore
+        if not projectfolders:
+            self.check_validity_and_share(os.path.basename(tmpbid), view)
+            return
+
+        projpaths = [f['path'] for f in projectfolders]
+        for projpath in projpaths:
+            if os.path.commonpath([projpath]) == os.path.commonpath([projpath, tmpbid]):
+                bid = os.path.relpath(tmpbid, projpath)
+                self.check_validity_and_share(bid, view)
+                return
+
+    def check_validity_and_share(self, bid, view):
+        vws = workspaces.lookupId(self.wid)
+        if bid in buffers:
+            # we are already attached and the buffer exists. Simply send
+            # the current contents to the remote.
+            bfm = buffers.lookupId(bid)
+            bfm.overwrite(TEXT_LISTENER)
+            return
+
+        allbuffers = vws.handle.fetch_buffers().wait()
+        if bid not in allbuffers:
+            # in the future make this creation ephimeral.
+            self.window.run_command("codemp_create_buffer", {
+                "workspace_id": self.wid,
+                "buffer_id": bid
+            })
+
         def _():
-            buffers.remove(buffer_id)
-            if not vws.handle.detach_buffer(buffer_id):
-                logger.error(f"could not leave the buffer {buffer_id}.")
-            else:
-                logger.debug(f"successfully detached from {buffer_id}.")
-        sublime.set_timeout(_, 10)
+            vbuff = some(buffers.register(bid, vws, localview=view))
+            vbuff.overwrite(TEXT_LISTENER)
+
+        sublime.set_timeout_async(_)
+
 
 # Leave Buffer Comand
 class CodempCreateBufferCommand(sublime_plugin.WindowCommand):

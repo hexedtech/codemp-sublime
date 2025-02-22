@@ -94,6 +94,13 @@
       // 'buffer_id': 'test'
   	}
   },
+  {
+    "caption": "Codemp: Share Current Buffer...",
+    "command": "codemp_share_local_buffer",
+    "args": {
+      // 'workspace_id': 'asd'
+    }
+  },
   // {
   //   "caption": "Codemp: Create Buffer",
   //   "command": "codemp_create_buffer",
