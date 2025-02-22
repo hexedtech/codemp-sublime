@@ -58,7 +58,7 @@ class QPServerBrowser():
                 try: self.window.run_command(
                         "codemp_join_workspace", {"workspace_id": wid})
                 except Exception as e:
-                    return
+                    raise e
 
             ws = workspaces.lookupId(wid)
             buffers = ws.handle.fetch_buffers()
