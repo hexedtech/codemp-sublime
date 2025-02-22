@@ -119,11 +119,9 @@ class CodempDisconnectCommand(sublime_plugin.WindowCommand):
         return session.is_active()
 
     def run(self):
-        cli = session.client
-
-        for ws in workspaces.lookup():
-            if cli.leave_workspace(ws.id):
-                workspaces.remove(ws)
+        wslist = session.client.active_workspaces()
+        for ws in wslist:
+            workspaces.remove(ws)
 
         session.drop_client()
         logger.info(f"disconnected from server '{session.config.host}'!")
@@ -145,19 +143,11 @@ class CodempJoinWorkspaceCommand(sublime_plugin.WindowCommand):
             )
 
     def run(self, workspace_id):  # pyright: ignore[reportIncompatibleMethodOverride]
-        if workspace_id is None:
+        if workspace_id in workspaces:
             return
 
         logger.info(f"Joining workspace: '{workspace_id}'...")
-        try:
-            ws = session.client.attach_workspace(workspace_id).wait()
-        except Exception as e:
-            logger.error(f"Could not join workspace '{workspace_id}': {e}")
-            sublime.error_message(f"Could not join workspace '{workspace_id}'")
-            raise e
-
-        logger.debug("Joined! Adding workspace to registry")
-        workspaces.register(ws)
+        workspaces.register(workspace_id)
 
 
 # Leave Workspace Command
@@ -172,14 +162,13 @@ class CodempLeaveWorkspaceCommand(sublime_plugin.WindowCommand):
             )
 
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
-        try:
-            workspaces.remove(workspace_id)
-        finally:
-            if not session.client.leave_workspace(workspace_id):
-                logger.error(f"could not leave the workspace '{workspace_id}'")
-            else:
-                logger.debug(f"successfully left the workspace '{workspace_id}'")
+        if workspace_id not in workspaces:
+            sublime.error_message(f"You are not attached to the workspace '{workspace_id}'")
+            logger.warning(f"You are not attached to the workspace_id '{workspace_id}'")
+            return
 
+        logger.debug("We are about to remove the workspace {}".format(workspace_id))
+        workspaces.remove(workspace_id)
 
 class CodempInviteToWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self) -> bool:
@@ -208,10 +197,6 @@ class CodempCreateWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return session.is_active()
 
-    # def input(self, args):
-    #     if "workspace_id" not in args:
-    #         return SimpleTextInput(("workspace_id", "new workspace name"))
-
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
         try:
             session.client.create_workspace(workspace_id)
@@ -223,11 +208,6 @@ class CodempCreateWorkspaceCommand(sublime_plugin.WindowCommand):
 class CodempDeleteWorkspaceCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return session.is_active()
-
-    # def input(self, args):
-    #     workspaces = session.get_workspaces(owned=True, invited=False)  # noqa: F841
-    #     if "workspace_id" not in args:
-    #         return SimpleListInput(("workspace_id", workspaces))
 
     def run(self, workspace_id: str):  # pyright: ignore[reportIncompatibleMethodOverride]
         if workspace_id in workspaces:

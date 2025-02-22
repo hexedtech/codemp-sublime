@@ -8,7 +8,6 @@ import sublime
 import shutil
 import tempfile
 import logging
-import gc
 
 from codemp import Selection
 from .. import globals as g
@@ -107,7 +106,7 @@ class WorkspaceRegistry():
         return True
 
     def hasactive(self):
-        return len(session.client.active_workspaces()) > 0
+        return len(self._workspaces.keys()) > 0
 
     def lookup(self, w: Optional[sublime.Window] = None) -> list[WorkspaceManager]:
         if not w:
@@ -117,7 +116,7 @@ class WorkspaceRegistry():
 
     def lookupParent(self, ws: WorkspaceManager | str) -> sublime.Window:
         if isinstance(ws, str):
-            wsm = self.lookupId(ws)
+            ws = self.lookupId(ws)
         return self._workspaces[ws]
 
     def lookupId(self, wid: str) -> WorkspaceManager:
@@ -125,24 +124,43 @@ class WorkspaceRegistry():
         if not wsm: raise KeyError
         return wsm
 
-    def register(self, wshandle: codemp.Workspace) -> WorkspaceManager:
+    def register(self, wid: str) -> WorkspaceManager:
         win = sublime.active_window()
 
         # tmpdir = tempfile.mkdtemp(prefix="codemp_")
         # add_project_folder(win, tmpdir, f"{g.WORKSPACE_FOLDER_PREFIX}{wshandle.id()}")
+        try:
+            ws = session.client.attach_workspace(wid).wait()
+        except Exception as e:
+            logger.error(f"Could not join workspace '{wid}': {e}")
+            sublime.error_message(f"Could not join workspace '{wid}'")
+            raise e
+        logger.debug("Joined! Adding workspace to registry")
 
         tmpdir = "DISABLED"
-        wm = WorkspaceManager(wshandle, win, tmpdir)
+        wm = WorkspaceManager(ws, win, tmpdir)
         self._workspaces[wm] = win
+
         return wm
 
     def remove(self, ws: WorkspaceManager | str):
         if isinstance(ws, str):
             ws = self.lookupId(ws)
 
-        # remove_project_folder(ws.window, f"{g.WORKSPACE_FOLDER_PREFIX}{ws.id}")
-        # shutil.rmtree(ws.rootdir, ignore_errors=True)
+        logger.debug("removing all the buffers from the workspace")
+        # we need ids, we can't keep references to the buffermanager here
+        bufferlist = [buff.id for buff in buffers.lookup(ws)]
+        for buff in bufferlist:
+            logger.debug("removing the buffer {}".format(buff))
+            buffers.remove(buff)
+
         del self._workspaces[ws]
+
+        ws = ws.id
+        if not session.client.leave_workspace(ws):
+            logger.error(f"could not leave the workspace '{ws}'")
+        else:
+            logger.debug(f"successfully left the workspace '{ws}'")
 
 
 

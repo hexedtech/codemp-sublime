@@ -71,17 +71,27 @@ def bind_callback(v: sublime.View):
     return _callback
 
 class BufferManager():
-    def __init__(self, handle: codemp.BufferController, v: sublime.View, filename: str):
+    def __init__(self, handle: codemp.BufferController, v: sublime.View, filename: str, islocal: bool):
         self.handle: codemp.BufferController = handle
         self.view: sublime.View = v
+        self.islocal: bool = islocal
         self.id = self.handle.path()
         self.filename = filename
         self.handle.callback(bind_callback(self.view))
 
+        self.view.settings().set(g.CODEMP_VIEW_TAG, True)
+        self.view.settings().set(g.CODEMP_BUFFER_ID, self.id)
+        self.view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
+
     def __del__(self):
         logger.debug(f"dropping buffer {self.id}")
-        self.view.close()
         self.handle.clear_callback()
+        if self.islocal:
+            self.view.settings().erase(g.CODEMP_BUFFER_ID)
+            self.view.settings().erase(g.CODEMP_VIEW_TAG)
+            self.view.set_status(g.SUBLIME_STATUS_ID, "")
+        else:
+            self.view.close()
 
     def __hash__(self):
         return hash(self.id)
@@ -103,16 +113,25 @@ class BufferManager():
     def sync(self, text_listener):
         promise = self.handle.content()
         def _():
-            current_contents = get_contents(self.view)
+            # current_contents = get_contents(self.view)
             content = promise.wait()
-            if content == current_contents:
-                return
 
             safe_listener_detach(text_listener)
             populate_view(self.view, content)
             safe_listener_attach(text_listener, self.view.buffer())
+
             sublime.status_message("Syncd contents.")
         sublime.set_timeout_async(_)
+
+    def overwrite(self, text_listener):
+        localcontents = get_contents(self.view)
+        remotecontents = self.handle.content().wait()
+        remotelen = len(remotecontents)
+        self.handle.send(
+            TextChange(start=0, end=remotelen, content= localcontents)
+        )
+        self.sync(text_listener)
+
 
 class BufferRegistry():
     def __init__(self):
@@ -142,28 +161,32 @@ class BufferRegistry():
         if not bfm: raise KeyError
         return bfm
 
-    def register(self, bhandle: codemp.BufferController, wsm: WorkspaceManager):
-        bid = bhandle.path()
-    
+    def register(self, buff: str, wsm: WorkspaceManager, localview: sublime.View | None = None):
+
+        try: buffctl = wsm.handle.attach_buffer(buff).wait()
+        except Exception as e:
+            logger.error(f"error when attaching to buffer '{id}':\n\n {e}")
+            sublime.error_message(f"Could not attach to buffer '{buff}'")
+            raise e
+
         win = sublime.active_window()
-        newfileflags = sublime.NewFileFlags.TRANSIENT \
-            | sublime.NewFileFlags.ADD_TO_SELECTION \
-            | sublime.NewFileFlags.FORCE_CLONE
-        view = win.new_file(newfileflags)
+        if not localview:
+            newfileflags = sublime.NewFileFlags.TRANSIENT \
+                | sublime.NewFileFlags.ADD_TO_SELECTION \
+                | sublime.NewFileFlags.FORCE_CLONE
+            view = win.new_file(newfileflags)
 
 
-        view.set_scratch(True)
-        view.set_name(os.path.basename(bid))
-        syntax = sublime.find_syntax_for_file(bid)
-        if syntax:
-            view.assign_syntax(syntax)
-
-        view.settings().set(g.CODEMP_VIEW_TAG, True)
-        view.settings().set(g.CODEMP_BUFFER_ID, bid)
-        view.set_status(g.SUBLIME_STATUS_ID, "[Codemp]")
+            view.set_scratch(True)
+            view.set_name(os.path.basename(buff))
+            syntax = sublime.find_syntax_for_file(buff)
+            if syntax:
+                view.assign_syntax(syntax)
+        else:
+            view = localview
 
         tmpfile = "DISABLE"
-        bfm = BufferManager(bhandle, view, tmpfile)
+        bfm = BufferManager(buffctl, view, tmpfile, islocal = localview is not None)
         self._buffers[bfm] = wsm
 
         return bfm
@@ -171,8 +194,15 @@ class BufferRegistry():
     def remove(self, bf: BufferManager | str):
         if isinstance(bf, str):
             bf = self.lookupId(bf)
+        ws = self.lookupParent(bf)
 
         del self._buffers[bf]
+
+        bf = bf.id
+        if not ws.handle.detach_buffer(bf):
+            logger.error(f"could not leave the buffer {bf}.")
+        else:
+            logger.debug(f"successfully detached from {bf}.")
 
 
 buffers = BufferRegistry()
