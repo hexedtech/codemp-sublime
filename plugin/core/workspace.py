@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import logging
 
-from codemp import Selection
+from codemp import Selection, Event
 from .. import globals as g
 from ..utils import draw_cursor_region
 from ..utils import bidict
@@ -62,6 +62,22 @@ def cursor_callback(ctl: codemp.CursorController):
             draw_cursor_region(bfm.view, region_start, region_end, event.user)
     sublime.set_timeout_async(_)
 
+def workspace_callback(ws: codemp.Workspace):
+    # TODO: create a dedicated panel for codemp events and notifications.
+    def _():
+        while event := ws.try_recv().wait():
+            if event is None: break
+
+            if isinstance(event, Event.FileTreeUpdated):                                #type:ignore
+                logger.debug(f"received a FileTree Event for workspace: {ws.id} - {event.path}")  #type:ignore
+
+            if isinstance(event, Event.UserJoin):                                       #type:ignore
+                logger.debug(f"User '{event.name}' joined the workspace '{ws.id}'")     #type:ignore
+
+            if isinstance(event, Event.UserLeave):                                      #type:ignore
+                logger.debug(f"User '{event.name}' left the workspace '{ws.id}'")       #type:ignore
+    sublime.set_timeout_async(_)
+
 class WorkspaceManager():
     def __init__(self, handle: codemp.Workspace, window: sublime.Window, rootdir: str) -> None:
         self.handle: codemp.Workspace = handle
@@ -69,11 +85,13 @@ class WorkspaceManager():
         self.curctl: codemp.CursorController = self.handle.cursor()
         self.rootdir: str = rootdir
         self.id: str = self.handle.id()
+        self.handle.callback(workspace_callback)
         self.curctl.callback(cursor_callback)
 
     def __del__(self):
         logger.debug(f"dropping workspace {self.id}")
         self.curctl.clear_callback()
+        self.handle.clear_callback()
 
         for buff in self.handle.active_buffers():
             if not self.handle.detach_buffer(buff):
