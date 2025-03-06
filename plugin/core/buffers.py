@@ -171,6 +171,7 @@ class BufferRegistry():
 
         win = sublime.active_window()
         if not localview:
+            # TODO: what happens if we join a buffer that exists in the project?
             newfileflags = sublime.NewFileFlags.TRANSIENT \
                 | sublime.NewFileFlags.ADD_TO_SELECTION \
                 | sublime.NewFileFlags.FORCE_CLONE

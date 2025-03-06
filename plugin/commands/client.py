@@ -69,6 +69,7 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
 
     def maybe_get_password(self):
         def __(pwd):
+            panel.settings().erase("password")
             self.connprofile["password"] = pwd
             self.update_config_and_connect()
 
@@ -83,7 +84,7 @@ class CodempConnectCommand(sublime_plugin.WindowCommand):
             self.maybe_get_password()
 
         panel = self.window.show_input_panel("Username:", "", __, None, None)
-        panel.settings().set("password", False)
+        panel.settings().erase("password")
 
     def run(self):  # pyright: ignore[reportIncompatibleMethodOverride]
 
