@@ -21,31 +21,38 @@ from .plugin.commands.workspace import *
 from .plugin.quickpanel.qpbrowser import QPServerBrowser
 from .plugin.quickpanel.qpbrowser import QPWorkspaceBrowser
 
+from .plugin.logpanel import CodempToggleLogPanelCommand
+from .plugin.logpanel import CodempLogMessageCommand
+from .plugin.logpanel import CodempLogger
 
 LOG_LEVEL = logging.DEBUG
-handler = logging.StreamHandler()
-handler.setFormatter(
-    logging.Formatter(
-        fmt="<{thread}/{threadName}> {levelname} [{name} :: {funcName}] {message}",
-        style="{",
-    )
-)
-package_logger = logging.getLogger(__package__)
-package_logger.setLevel(LOG_LEVEL)
-package_logger.propagate = False
+package_logger = CodempLogger(__package__, LOG_LEVEL)
+
+# handler = logging.StreamHandler()
+# handler.setFormatter(
+#     logging.Formatter(
+#         fmt="{levelname} <{asctime}> ({threadName}) [{name}::{funcName}:{lineno}] {message}",
+#         style="{",
+#     )
+# )
+# package_logger = logging.getLogger(__package__)
+# package_logger.setLevel(LOG_LEVEL)
+# package_logger.propagate = False
 logger = logging.getLogger(__name__)
 
 # Initialisation and Deinitialisation
 ##############################################################################
 def plugin_loaded():
-    package_logger.addHandler(handler)
+    # package_logger.addHandler(handler)
+    package_logger.enable_logging()
     version = codemp.version()
     logger.debug("plugin loaded - library version: {}".format(version))
 
 def plugin_unloaded():
     logger.debug("unloading")
     safe_listener_detach(TEXT_LISTENER)
-    package_logger.removeHandler(handler)
+    package_logger.disenable_logging()
+    # package_logger.removeHandler(handler)
 
 def kill_all():
     for ws in workspaces.lookup():

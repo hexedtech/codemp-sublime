@@ -20,6 +20,11 @@
   //   }
   // },
   {
+    "caption": "Codemp: Toggle Log Panel",
+    "command": "codemp_toggle_log_panel",
+    "args": {}
+  },
+  {
     "caption": "Codemp: Browse Server",
     "command": "codemp_browse_server",
     "args": {}

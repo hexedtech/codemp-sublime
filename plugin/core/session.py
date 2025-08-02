@@ -33,13 +33,6 @@ class SessionManager():
 			return self._driver
 
 		self._driver = codemp.init()
-		logger.debug("registering logger callback...")
-		if not codemp.set_logger(lambda msg: logger.debug(msg), False):
-			logger.debug(
-				"could not register the logger... \
-				If reconnecting it's ok, \
-				the previous logger is still registered"
-			)
 		self._running = True
 		return self._driver
 
