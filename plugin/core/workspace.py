@@ -76,6 +76,7 @@ def workspace_callback(ws: codemp.Workspace):
 
             if isinstance(event, Event.UserLeave):                                      #type:ignore
                 logger.debug(f"User '{event.name}' left the workspace '{ws.id}'")       #type:ignore
+                
     sublime.set_timeout_async(_)
 
 class WorkspaceManager():

@@ -87,7 +87,7 @@ class CodempLogger():
 		self.pkg_logger.addHandler(self.filehandler)
 		self.pkg_logger.addHandler(self.panelhandler)
 
-	def disenable_logging(self):
+	def disable_logging(self):
 		self.pkg_logger.removeHandler(self.filehandler)
 		self.pkg_logger.removeHandler(self.panelhandler)
 

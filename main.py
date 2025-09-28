@@ -51,7 +51,7 @@ def plugin_loaded():
 def plugin_unloaded():
     logger.debug("unloading")
     safe_listener_detach(TEXT_LISTENER)
-    package_logger.disenable_logging()
+    package_logger.disable_logging()
     # package_logger.removeHandler(handler)
 
 def kill_all():
